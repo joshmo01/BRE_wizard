@@ -212,6 +212,7 @@ Interest_Rate (risk-based 9.5%–14.5% by CIBIL), EMI (reducing balance), Proces
 
 ## Script 4 — Repayment Schedule (`generate_repayment_schedule.py`)
 
+
 Reads `approved_loans.xlsx`, simulates monthly repayment for all loans applying 3 BRE rule sets.
 
 ```bash
@@ -258,6 +259,49 @@ Current | DPD 1-30 | DPD 31-60 | DPD 61-90 | DPD 90+
 3. DPD Bucket Analysis
 4. Loan Status Summary
 5. Prepayment Analysis
+
+---
+
+## Script 6 — Lifecycle Dashboard (`generate_lifecycle_dashboard.py`)
+
+Reads all three data files and builds a single unified Excel dashboard covering the full loan lifecycle.
+**Run this as the final step after the repayment schedule has been generated.**
+
+```bash
+python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/generate_lifecycle_dashboard.py"
+# custom inputs/output:
+python generate_lifecycle_dashboard.py --apps   "C:/path/loan_applications.xlsx" \
+                                        --loans  "C:/path/approved_loans.xlsx" \
+                                        --sched  "C:/path/loan_repayment_schedule.xlsx" \
+                                        --output "C:/path/to/folder"
+```
+
+Output file: `loan_lifecycle_dashboard.xlsx` (4 sheets: Dashboard + 3 data sheets)
+
+### Dashboard Sections
+
+| # | Section | Source |
+|---|---------|--------|
+| 1 | Lifecycle KPIs | Cross-file — approval rate, collection efficiency, totals, portfolio yield |
+| 2 | Applications by Lead Source | Applications sheet |
+| 3 | Approved Loans by Employment Type | Approved_Loans sheet |
+| 4 | Approved Loans by City Tier | Approved_Loans sheet |
+| 5 | CIBIL Band Analysis (751-900) | Approved_Loans sheet |
+| 6 | Repayment Performance by Payment Status | Repayment_Schedule sheet |
+
+---
+
+## End-to-End Workflow
+
+```
+Step 1  generate_loan_applications.py    →  loan_applications.xlsx      (3,000 applicants)
+Step 2  build_loan_pricing.py            →  Loan Pricing.xlsx           (810 rate combinations)
+          ↓ User reviews / adjusts Final Rate (%) in Excel, then saves and closes
+Step 3  generate_approved_loans.py       →  approved_loans.xlsx         (rates from pricing table)
+Step 4  generate_repayment_schedule.py   →  loan_repayment_schedule.xlsx
+Step 5  generate_repayment_dashboard.py  →  repayment_dashboard.xlsx    (repayment analysis)
+Step 6  generate_lifecycle_dashboard.py  →  loan_lifecycle_dashboard.xlsx (full lifecycle view)
+```
 
 ---
 
