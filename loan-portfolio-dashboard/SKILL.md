@@ -75,6 +75,50 @@ Columns: Count | Avg Rate | Total Outstanding | Total Monthly Profit | NPA Count
 Rows: AAA, AA, A, BBB, BB, B, C
 Columns: Count | Avg Interest Rate | Avg Monthly Profit | Total Monthly Profit | NPA Count
 
+## Script 2 — Loan Applications (`generate_loan_applications.py`)
+
+Generates 3,000 synthetic Indian loan application records with a formula-driven Summary sheet.
+
+```bash
+python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/generate_loan_applications.py"
+# custom record count or output folder:
+python generate_loan_applications.py --records 5000 --output "C:/path/to/folder"
+```
+
+Output file: `loan_applications.xlsx`
+
+### Application Fields
+
+| Field | Description |
+|-------|-------------|
+| App_ID | APP-0001 onwards |
+| Age | 21–65 |
+| Gender | Male / Female |
+| City / City_Tier / State | 35 Indian cities across Tier 1 / 2 / 3 |
+| Employment_Type | Salaried / Self-Employed / Business Owner |
+| Employer_Category | Government / PSU / Private / MNC (Salaried only) |
+| Monthly_Income | Based on employment type |
+| Existing_EMI | 0–40% of income |
+| CIBIL_Score | 600–900 |
+| Loan_Product | Personal / Home / Auto / Business |
+| Loan_Amount_Requested | Product-specific ranges |
+| Loan_Tenure_Months | Product-specific options |
+| Lead_Source | Online / Branch / DSA / Referral / Walk-in |
+| Application_Date | Last 12 months |
+| FOIR | Existing EMI / Monthly Income |
+| Status | Converted / Not Converted (driven by CIBIL + FOIR logic) |
+
+### Summary Sheet Sections
+
+1. Executive KPIs (10 values: conversion rate, avg CIBIL, avg income, total loan ask, avg FOIR, etc.)
+2. Conversion by Loan Product
+3. Conversion by Employment Type
+4. Conversion by City Tier
+5. CIBIL Band Analysis (600–649 / 650–699 / 700–749 / 750–799 / 800–900)
+6. Lead Source Analysis
+
+---
+
 ## Using the User's Own Data
 
 If the user provides a CSV file instead of synthetic data, replace the data-generation block with:
