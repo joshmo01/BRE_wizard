@@ -239,20 +239,22 @@ for col, w in col_widths_s.items():
 
 # Formula range aliases — locked to Applications sheet
 last_row = NUM + 1   # e.g. 3001 for 3000 records
-R_RANGE  = f"$2:${last_row}"
 
-AGE  = f"Applications!$B{R_RANGE}"
-GEN  = f"Applications!$C{R_RANGE}"
-TIER = f"Applications!$E{R_RANGE}"
-EMP  = f"Applications!$G{R_RANGE}"
-INC  = f"Applications!$I{R_RANGE}"
-EMI  = f"Applications!$J{R_RANGE}"
-CIB  = f"Applications!$K{R_RANGE}"
-PROD = f"Applications!$L{R_RANGE}"
-LOAN = f"Applications!$M{R_RANGE}"
-SRC  = f"Applications!$O{R_RANGE}"
-FOIR_R = f"Applications!$Q{R_RANGE}"
-STAT = f"Applications!$R{R_RANGE}"
+def rng(col):
+    return f"Applications!${col}$2:${col}${last_row}"
+
+AGE    = rng("B")
+GEN    = rng("C")
+TIER   = rng("E")
+EMP    = rng("G")
+INC    = rng("I")
+EMI    = rng("J")
+CIB    = rng("K")
+PROD   = rng("L")
+LOAN   = rng("M")
+SRC    = rng("O")
+FOIR_R = rng("Q")
+STAT   = rng("R")
 
 # ── TITLE ─────────────────────────────────────────────────────────────────────
 ws.merge_cells("A1:F1")
