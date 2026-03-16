@@ -31,7 +31,6 @@ random.seed(42)
 
 # ── REFERENCE DATA ────────────────────────────────────────────────────────────
 CITY_DATA = [
-    # (City, Tier, State)
     ("Mumbai",          "Tier 1", "Maharashtra"),
     ("Delhi",           "Tier 1", "Delhi"),
     ("Bengaluru",       "Tier 1", "Karnataka"),
@@ -68,8 +67,7 @@ CITY_DATA = [
     ("Dehradun",        "Tier 3", "Uttarakhand"),
     ("Amritsar",        "Tier 3", "Punjab"),
 ]
-# Tier 1 cities get more applications
-CITY_WEIGHTS = [5] * 8 + [3] * 14 + [1] * 13
+CITY_WEIGHTS = [5] * 8 + [3] * 14 + [1] * 13   # Tier 1 gets more volume
 
 PRODUCTS      = ["Personal", "Home", "Auto", "Business"]
 EMP_TYPES     = ["Salaried", "Self-Employed", "Business Owner"]
@@ -91,12 +89,10 @@ rows = []
 for i in range(1, NUM + 1):
     app_id = f"APP-{i:04d}"
 
-    # Demographics
     age    = random.randint(21, 65)
     gender = random.choices(["Male", "Female"], weights=[65, 35])[0]
     city, city_tier, state = random.choices(CITY_DATA, weights=CITY_WEIGHTS)[0]
 
-    # Employment
     emp_type = random.choices(EMP_TYPES, weights=[50, 30, 20])[0]
     if emp_type == "Salaried":
         employer_cat   = random.choice(EMPLOYER_CATS)
@@ -111,7 +107,6 @@ for i in range(1, NUM + 1):
     existing_emi = round(monthly_income * np.random.uniform(0, 0.40), 2)
     cibil        = int(np.random.randint(600, 901))
 
-    # Loan details
     product = random.choices(PRODUCTS, weights=[40, 25, 20, 15])[0]
     if product == "Home":
         loan_amt = int(np.random.randint(1_000_000, 10_000_001))
@@ -127,33 +122,18 @@ for i in range(1, NUM + 1):
     app_date    = start_date + timedelta(days=random.randint(0, 365))
     foir        = round(existing_emi / monthly_income, 4) if monthly_income > 0 else 0
 
-    # Conversion probability — driven by CIBIL + FOIR
-    prob = 0.50
-    if   cibil >= 800: prob += 0.25
-    elif cibil >= 750: prob += 0.15
-    elif cibil >= 700: prob += 0.05
-    elif cibil >= 650: prob -= 0.10
-    else:              prob -= 0.25
-
-    if   foir > 0.60: prob -= 0.25
-    elif foir > 0.50: prob -= 0.15
-    elif foir < 0.30: prob += 0.10
-
-    prob   = max(0.05, min(0.95, prob))
-    status = "Converted" if random.random() < prob else "Not Converted"
-
     rows.append([
         app_id, age, gender, city, city_tier, state,
         emp_type, employer_cat, monthly_income, round(existing_emi, 2),
         cibil, product, loan_amt, tenure,
-        lead_source, app_date.strftime("%Y-%m-%d"), foir, status,
+        lead_source, app_date.strftime("%Y-%m-%d"), foir,
     ])
 
 COLS = [
     "App_ID", "Age", "Gender", "City", "City_Tier", "State",
     "Employment_Type", "Employer_Category", "Monthly_Income", "Existing_EMI",
     "CIBIL_Score", "Loan_Product", "Loan_Amount_Requested", "Loan_Tenure_Months",
-    "Lead_Source", "Application_Date", "FOIR", "Status",
+    "Lead_Source", "Application_Date", "FOIR",
 ]
 df = pd.DataFrame(rows, columns=COLS)
 
@@ -163,8 +143,6 @@ BLUE       = PatternFill("solid", fgColor="2E75B6")
 LIGHT_BLUE = PatternFill("solid", fgColor="D6E4F0")
 ALT        = PatternFill("solid", fgColor="EBF5FB")
 WHITE      = PatternFill("solid", fgColor="FFFFFF")
-GREEN      = PatternFill("solid", fgColor="E2EFDA")
-RED_LIGHT  = PatternFill("solid", fgColor="FCE4D6")
 
 HDR_FONT   = Font(bold=True, color="FFFFFF", size=10)
 TITLE_FONT = Font(bold=True, color="1F4E79", size=16)
@@ -224,7 +202,7 @@ for ri, row_data in enumerate(df.itertuples(index=False), 2):
         if ci in col_fmts:
             c.number_format = col_fmts[ci]
 
-col_widths_a = [10, 5, 8, 16, 8, 16, 16, 16, 16, 14, 11, 10, 22, 16, 12, 18, 7, 14]
+col_widths_a = [10, 5, 8, 16, 8, 16, 16, 16, 16, 14, 11, 10, 22, 16, 12, 18, 7]
 for i, w in enumerate(col_widths_a, 1):
     ws_a.column_dimensions[get_column_letter(i)].width = w
 ws_a.freeze_panes = "A2"
@@ -233,28 +211,28 @@ ws_a.freeze_panes = "A2"
 ws = wb.create_sheet("Summary")
 ws.sheet_view.showGridLines = False
 
-col_widths_s = {1: 26, 2: 16, 3: 16, 4: 16, 5: 18, 6: 16}
-for col, w in col_widths_s.items():
+for col, w in {1: 26, 2: 16, 3: 16, 4: 16, 5: 18, 6: 16}.items():
     ws.column_dimensions[get_column_letter(col)].width = w
 
-# Formula range aliases — locked to Applications sheet
-last_row = NUM + 1   # e.g. 3001 for 3000 records
+# Formula range aliases
+last_row = NUM + 1
 
 def rng(col):
     return f"Applications!${col}$2:${col}${last_row}"
 
-AGE    = rng("B")
-GEN    = rng("C")
-TIER   = rng("E")
 EMP    = rng("G")
 INC    = rng("I")
 EMI    = rng("J")
 CIB    = rng("K")
 PROD   = rng("L")
 LOAN   = rng("M")
+TEN    = rng("N")
 SRC    = rng("O")
 FOIR_R = rng("Q")
-STAT   = rng("R")
+TIER   = rng("E")
+APP_ID = rng("A")
+
+TOTAL  = f"=COUNTA({APP_ID})"   # reusable total count
 
 # ── TITLE ─────────────────────────────────────────────────────────────────────
 ws.merge_cells("A1:F1")
@@ -268,30 +246,29 @@ ws.row_dimensions[1].height = 36
 
 ws.merge_cells("A2:F2")
 c = ws["A2"]
-c.value     = (f"Generated: {today.strftime('%d %b %Y')} | "
-               f"Total Records: {NUM:,}")
+c.value     = f"Generated: {today.strftime('%d %b %Y')} | Total Records: {NUM:,}"
 c.font      = Font(italic=True, color="666666", size=9)
 c.fill      = WHITE
 c.alignment = CENTER
 c.border    = THIN_BORDER
 
-R = 4  # row cursor
+R = 4
 
 # ── SECTION 1: Executive KPIs ─────────────────────────────────────────────────
 section_title(ws, R, "  EXECUTIVE KPIs")
 R += 1
 
 kpis = [
-    ("Total Applications",       f"=COUNTA({STAT})",                                      "0"),
-    ("Converted",                f'=COUNTIF({STAT},"Converted")',                          "0"),
-    ("Not Converted",            f'=COUNTIF({STAT},"Not Converted")',                      "0"),
-    ("Conversion Rate (%)",      f'=IFERROR(COUNTIF({STAT},"Converted")/COUNTA({STAT}),0)', "0.00%"),
-    ("Avg CIBIL Score",          f"=AVERAGE({CIB})",                                       "0.0"),
-    ("Avg Monthly Income (Rs)",  f"=AVERAGE({INC})",                                       "#,##0.00"),
-    ("Avg Loan Requested (Rs)",  f"=AVERAGE({LOAN})",                                      "#,##0.00"),
-    ("Total Loan Ask (Rs)",      f"=SUM({LOAN})",                                          "#,##0.00"),
-    ("Avg FOIR",                 f"=AVERAGE({FOIR_R})",                                    "0.00%"),
-    ("Avg Existing EMI (Rs)",    f"=AVERAGE({EMI})",                                       "#,##0.00"),
+    ("Total Applications",      f"=COUNTA({APP_ID})",                   "0"),
+    ("Total Loan Ask (Rs)",     f"=SUM({LOAN})",                        "#,##0.00"),
+    ("Avg Loan Requested (Rs)", f"=AVERAGE({LOAN})",                    "#,##0.00"),
+    ("Avg CIBIL Score",         f"=AVERAGE({CIB})",                     "0.0"),
+    ("Avg Monthly Income (Rs)", f"=AVERAGE({INC})",                     "#,##0.00"),
+    ("Avg Existing EMI (Rs)",   f"=AVERAGE({EMI})",                     "#,##0.00"),
+    ("Avg FOIR",                f"=AVERAGE({FOIR_R})",                  "0.00%"),
+    ("Avg Loan Tenure (Months)",f"=AVERAGE({TEN})",                     "0.0"),
+    ("Salaried Applicants",     f'=COUNTIF({EMP},"Salaried")',          "0"),
+    ("Online Applications",     f'=COUNTIF({SRC},"Online")',            "0"),
 ]
 
 for idx, (label, formula, fmt) in enumerate(kpis):
@@ -309,71 +286,71 @@ for idx, (label, formula, fmt) in enumerate(kpis):
 
 R += (len(kpis) + 1) // 2 + 1
 
-# ── SECTION 2: Conversion by Loan Product ────────────────────────────────────
-section_title(ws, R, "  CONVERSION BY LOAN PRODUCT")
+# ── SECTION 2: Applications by Loan Product ───────────────────────────────────
+section_title(ws, R, "  APPLICATIONS BY LOAN PRODUCT")
 R += 1
 
-for ci, h in enumerate(["Product", "Total Apps", "Converted",
-                         "Conversion %", "Avg CIBIL", "Avg Loan Ask (Rs)"], 1):
+for ci, h in enumerate(["Product", "Count", "% of Total",
+                         "Avg CIBIL", "Avg Loan Ask (Rs)", "Avg FOIR"], 1):
     hdr(ws, R, ci, h, fill=BLUE, font=SUB_FONT)
 ws.row_dimensions[R].height = 28
 R += 1
 
 for i, prod in enumerate(PRODUCTS):
     fill = ALT if i % 2 == 0 else WHITE
-    val(ws, R, 1, prod,                                                                fill=fill, align=LEFT)
-    val(ws, R, 2, f'=COUNTIF({PROD},"{prod}")',                         "#,##0",       fill=fill)
-    val(ws, R, 3, f'=COUNTIFS({PROD},"{prod}",{STAT},"Converted")',     "#,##0",       fill=fill)
-    val(ws, R, 4, f'=IFERROR(COUNTIFS({PROD},"{prod}",{STAT},"Converted")'
-                  f'/COUNTIF({PROD},"{prod}"),0)',                       "0.00%",       fill=fill)
-    val(ws, R, 5, f'=AVERAGEIF({PROD},"{prod}",{CIB})',                 "0.0",         fill=fill)
-    val(ws, R, 6, f'=AVERAGEIF({PROD},"{prod}",{LOAN})',                "#,##0.00",    fill=fill)
+    val(ws, R, 1, prod,                                                         fill=fill, align=LEFT)
+    val(ws, R, 2, f'=COUNTIF({PROD},"{prod}")',              "#,##0",           fill=fill)
+    val(ws, R, 3, f'=IFERROR(COUNTIF({PROD},"{prod}")'
+                  f'/COUNTA({APP_ID}),0)',                   "0.00%",           fill=fill)
+    val(ws, R, 4, f'=AVERAGEIF({PROD},"{prod}",{CIB})',      "0.0",             fill=fill)
+    val(ws, R, 5, f'=AVERAGEIF({PROD},"{prod}",{LOAN})',     "#,##0.00",        fill=fill)
+    val(ws, R, 6, f'=AVERAGEIF({PROD},"{prod}",{FOIR_R})',   "0.00%",           fill=fill)
     R += 1
 
 R += 1
 
-# ── SECTION 3: Conversion by Employment Type ─────────────────────────────────
-section_title(ws, R, "  CONVERSION BY EMPLOYMENT TYPE")
+# ── SECTION 3: Applications by Employment Type ────────────────────────────────
+section_title(ws, R, "  APPLICATIONS BY EMPLOYMENT TYPE")
 R += 1
 
-for ci, h in enumerate(["Employment Type", "Total Apps", "Converted",
-                         "Conversion %", "Avg Income (Rs)", "Avg CIBIL"], 1):
+for ci, h in enumerate(["Employment Type", "Count", "% of Total",
+                         "Avg Income (Rs)", "Avg CIBIL", "Avg Loan Ask (Rs)"], 1):
     hdr(ws, R, ci, h, fill=BLUE, font=SUB_FONT)
 ws.row_dimensions[R].height = 28
 R += 1
 
 for i, emp in enumerate(EMP_TYPES):
     fill = ALT if i % 2 == 0 else WHITE
-    val(ws, R, 1, emp,                                                                fill=fill, align=LEFT)
-    val(ws, R, 2, f'=COUNTIF({EMP},"{emp}")',                          "#,##0",       fill=fill)
-    val(ws, R, 3, f'=COUNTIFS({EMP},"{emp}",{STAT},"Converted")',      "#,##0",       fill=fill)
-    val(ws, R, 4, f'=IFERROR(COUNTIFS({EMP},"{emp}",{STAT},"Converted")'
-                  f'/COUNTIF({EMP},"{emp}"),0)',                        "0.00%",       fill=fill)
-    val(ws, R, 5, f'=AVERAGEIF({EMP},"{emp}",{INC})',                  "#,##0.00",    fill=fill)
-    val(ws, R, 6, f'=AVERAGEIF({EMP},"{emp}",{CIB})',                  "0.0",         fill=fill)
+    val(ws, R, 1, emp,                                                          fill=fill, align=LEFT)
+    val(ws, R, 2, f'=COUNTIF({EMP},"{emp}")',                "#,##0",          fill=fill)
+    val(ws, R, 3, f'=IFERROR(COUNTIF({EMP},"{emp}")'
+                  f'/COUNTA({APP_ID}),0)',                   "0.00%",          fill=fill)
+    val(ws, R, 4, f'=AVERAGEIF({EMP},"{emp}",{INC})',        "#,##0.00",       fill=fill)
+    val(ws, R, 5, f'=AVERAGEIF({EMP},"{emp}",{CIB})',        "0.0",            fill=fill)
+    val(ws, R, 6, f'=AVERAGEIF({EMP},"{emp}",{LOAN})',       "#,##0.00",       fill=fill)
     R += 1
 
 R += 1
 
-# ── SECTION 4: Conversion by City Tier ───────────────────────────────────────
-section_title(ws, R, "  CONVERSION BY CITY TIER")
+# ── SECTION 4: Applications by City Tier ─────────────────────────────────────
+section_title(ws, R, "  APPLICATIONS BY CITY TIER")
 R += 1
 
-for ci, h in enumerate(["City Tier", "Total Apps", "Converted",
-                         "Conversion %", "Avg Loan Ask (Rs)", "Avg CIBIL"], 1):
+for ci, h in enumerate(["City Tier", "Count", "% of Total",
+                         "Avg Loan Ask (Rs)", "Avg CIBIL", "Avg Income (Rs)"], 1):
     hdr(ws, R, ci, h, fill=BLUE, font=SUB_FONT)
 ws.row_dimensions[R].height = 28
 R += 1
 
 for i, tier in enumerate(["Tier 1", "Tier 2", "Tier 3"]):
     fill = ALT if i % 2 == 0 else WHITE
-    val(ws, R, 1, tier,                                                                fill=fill, align=LEFT)
-    val(ws, R, 2, f'=COUNTIF({TIER},"{tier}")',                         "#,##0",       fill=fill)
-    val(ws, R, 3, f'=COUNTIFS({TIER},"{tier}",{STAT},"Converted")',     "#,##0",       fill=fill)
-    val(ws, R, 4, f'=IFERROR(COUNTIFS({TIER},"{tier}",{STAT},"Converted")'
-                  f'/COUNTIF({TIER},"{tier}"),0)',                       "0.00%",       fill=fill)
-    val(ws, R, 5, f'=AVERAGEIF({TIER},"{tier}",{LOAN})',                "#,##0.00",    fill=fill)
-    val(ws, R, 6, f'=AVERAGEIF({TIER},"{tier}",{CIB})',                 "0.0",         fill=fill)
+    val(ws, R, 1, tier,                                                         fill=fill, align=LEFT)
+    val(ws, R, 2, f'=COUNTIF({TIER},"{tier}")',              "#,##0",          fill=fill)
+    val(ws, R, 3, f'=IFERROR(COUNTIF({TIER},"{tier}")'
+                  f'/COUNTA({APP_ID}),0)',                   "0.00%",          fill=fill)
+    val(ws, R, 4, f'=AVERAGEIF({TIER},"{tier}",{LOAN})',     "#,##0.00",       fill=fill)
+    val(ws, R, 5, f'=AVERAGEIF({TIER},"{tier}",{CIB})',      "0.0",            fill=fill)
+    val(ws, R, 6, f'=AVERAGEIF({TIER},"{tier}",{INC})',      "#,##0.00",       fill=fill)
     R += 1
 
 R += 1
@@ -382,68 +359,29 @@ R += 1
 section_title(ws, R, "  CIBIL BAND ANALYSIS")
 R += 1
 
-for ci, h in enumerate(["CIBIL Band", "Total Apps", "Converted",
-                         "Conversion %", "Avg Loan Ask (Rs)", "Avg FOIR"], 1):
+for ci, h in enumerate(["CIBIL Band", "Count", "% of Total",
+                         "Avg Loan Ask (Rs)", "Avg FOIR", "Avg Income (Rs)"], 1):
     hdr(ws, R, ci, h, fill=BLUE, font=SUB_FONT)
 ws.row_dimensions[R].height = 28
 R += 1
 
 cibil_bands = [
-    ("600 - 649",
-     f"=SUMPRODUCT(({CIB}>=600)*({CIB}<=649)*1)",
-     f"=SUMPRODUCT(({CIB}>=600)*({CIB}<=649)*({STAT}=\"Converted\"))",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=600)*({CIB}<=649)*({STAT}=\"Converted\"))"
-     f"/SUMPRODUCT(({CIB}>=600)*({CIB}<=649)*1),0)",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=600)*({CIB}<=649)*{LOAN})"
-     f"/SUMPRODUCT(({CIB}>=600)*({CIB}<=649)*1),0)",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=600)*({CIB}<=649)*{FOIR_R})"
-     f"/SUMPRODUCT(({CIB}>=600)*({CIB}<=649)*1),0)"),
-    ("650 - 699",
-     f"=SUMPRODUCT(({CIB}>=650)*({CIB}<=699)*1)",
-     f"=SUMPRODUCT(({CIB}>=650)*({CIB}<=699)*({STAT}=\"Converted\"))",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=650)*({CIB}<=699)*({STAT}=\"Converted\"))"
-     f"/SUMPRODUCT(({CIB}>=650)*({CIB}<=699)*1),0)",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=650)*({CIB}<=699)*{LOAN})"
-     f"/SUMPRODUCT(({CIB}>=650)*({CIB}<=699)*1),0)",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=650)*({CIB}<=699)*{FOIR_R})"
-     f"/SUMPRODUCT(({CIB}>=650)*({CIB}<=699)*1),0)"),
-    ("700 - 749",
-     f"=SUMPRODUCT(({CIB}>=700)*({CIB}<=749)*1)",
-     f"=SUMPRODUCT(({CIB}>=700)*({CIB}<=749)*({STAT}=\"Converted\"))",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=700)*({CIB}<=749)*({STAT}=\"Converted\"))"
-     f"/SUMPRODUCT(({CIB}>=700)*({CIB}<=749)*1),0)",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=700)*({CIB}<=749)*{LOAN})"
-     f"/SUMPRODUCT(({CIB}>=700)*({CIB}<=749)*1),0)",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=700)*({CIB}<=749)*{FOIR_R})"
-     f"/SUMPRODUCT(({CIB}>=700)*({CIB}<=749)*1),0)"),
-    ("750 - 799",
-     f"=SUMPRODUCT(({CIB}>=750)*({CIB}<=799)*1)",
-     f"=SUMPRODUCT(({CIB}>=750)*({CIB}<=799)*({STAT}=\"Converted\"))",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=750)*({CIB}<=799)*({STAT}=\"Converted\"))"
-     f"/SUMPRODUCT(({CIB}>=750)*({CIB}<=799)*1),0)",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=750)*({CIB}<=799)*{LOAN})"
-     f"/SUMPRODUCT(({CIB}>=750)*({CIB}<=799)*1),0)",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=750)*({CIB}<=799)*{FOIR_R})"
-     f"/SUMPRODUCT(({CIB}>=750)*({CIB}<=799)*1),0)"),
-    ("800 - 900",
-     f"=SUMPRODUCT(({CIB}>=800)*({CIB}<=900)*1)",
-     f"=SUMPRODUCT(({CIB}>=800)*({CIB}<=900)*({STAT}=\"Converted\"))",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=800)*({CIB}<=900)*({STAT}=\"Converted\"))"
-     f"/SUMPRODUCT(({CIB}>=800)*({CIB}<=900)*1),0)",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=800)*({CIB}<=900)*{LOAN})"
-     f"/SUMPRODUCT(({CIB}>=800)*({CIB}<=900)*1),0)",
-     f"=IFERROR(SUMPRODUCT(({CIB}>=800)*({CIB}<=900)*{FOIR_R})"
-     f"/SUMPRODUCT(({CIB}>=800)*({CIB}<=900)*1),0)"),
+    ("600 - 649", 600, 649),
+    ("650 - 699", 650, 699),
+    ("700 - 749", 700, 749),
+    ("750 - 799", 750, 799),
+    ("800 - 900", 800, 900),
 ]
 
-for i, (label, cnt, conv, conv_pct, avg_loan, avg_foir) in enumerate(cibil_bands):
+for i, (label, lo, hi) in enumerate(cibil_bands):
     fill = ALT if i % 2 == 0 else WHITE
-    val(ws, R, 1, label,    fill=fill, align=LEFT)
-    val(ws, R, 2, cnt,      "#,##0",  fill=fill)
-    val(ws, R, 3, conv,     "#,##0",  fill=fill)
-    val(ws, R, 4, conv_pct, "0.00%",  fill=fill)
-    val(ws, R, 5, avg_loan, "#,##0.00", fill=fill)
-    val(ws, R, 6, avg_foir, "0.00%",  fill=fill)
+    mask = f"({CIB}>={lo})*({CIB}<={hi})"
+    val(ws, R, 1, label,                                                                      fill=fill, align=LEFT)
+    val(ws, R, 2, f"=SUMPRODUCT({mask}*1)",                                  "#,##0",        fill=fill)
+    val(ws, R, 3, f"=IFERROR(SUMPRODUCT({mask}*1)/COUNTA({APP_ID}),0)",      "0.00%",        fill=fill)
+    val(ws, R, 4, f"=IFERROR(SUMPRODUCT({mask}*{LOAN})/SUMPRODUCT({mask}*1),0)", "#,##0.00", fill=fill)
+    val(ws, R, 5, f"=IFERROR(SUMPRODUCT({mask}*{FOIR_R})/SUMPRODUCT({mask}*1),0)", "0.00%", fill=fill)
+    val(ws, R, 6, f"=IFERROR(SUMPRODUCT({mask}*{INC})/SUMPRODUCT({mask}*1),0)",  "#,##0.00", fill=fill)
     R += 1
 
 R += 1
@@ -452,21 +390,21 @@ R += 1
 section_title(ws, R, "  LEAD SOURCE ANALYSIS")
 R += 1
 
-for ci, h in enumerate(["Lead Source", "Total Apps", "Converted",
-                         "Conversion %", "Avg Loan Ask (Rs)", "Avg CIBIL"], 1):
+for ci, h in enumerate(["Lead Source", "Count", "% of Total",
+                         "Avg CIBIL", "Avg Loan Ask (Rs)", "Avg FOIR"], 1):
     hdr(ws, R, ci, h, fill=BLUE, font=SUB_FONT)
 ws.row_dimensions[R].height = 28
 R += 1
 
 for i, src in enumerate(LEAD_SOURCES):
     fill = ALT if i % 2 == 0 else WHITE
-    val(ws, R, 1, src,                                                                 fill=fill, align=LEFT)
-    val(ws, R, 2, f'=COUNTIF({SRC},"{src}")',                           "#,##0",       fill=fill)
-    val(ws, R, 3, f'=COUNTIFS({SRC},"{src}",{STAT},"Converted")',       "#,##0",       fill=fill)
-    val(ws, R, 4, f'=IFERROR(COUNTIFS({SRC},"{src}",{STAT},"Converted")'
-                  f'/COUNTIF({SRC},"{src}"),0)',                         "0.00%",       fill=fill)
-    val(ws, R, 5, f'=AVERAGEIF({SRC},"{src}",{LOAN})',                  "#,##0.00",    fill=fill)
-    val(ws, R, 6, f'=AVERAGEIF({SRC},"{src}",{CIB})',                   "0.0",         fill=fill)
+    val(ws, R, 1, src,                                                          fill=fill, align=LEFT)
+    val(ws, R, 2, f'=COUNTIF({SRC},"{src}")',                "#,##0",          fill=fill)
+    val(ws, R, 3, f'=IFERROR(COUNTIF({SRC},"{src}")'
+                  f'/COUNTA({APP_ID}),0)',                   "0.00%",          fill=fill)
+    val(ws, R, 4, f'=AVERAGEIF({SRC},"{src}",{CIB})',        "0.0",            fill=fill)
+    val(ws, R, 5, f'=AVERAGEIF({SRC},"{src}",{LOAN})',       "#,##0.00",       fill=fill)
+    val(ws, R, 6, f'=AVERAGEIF({SRC},"{src}",{FOIR_R})',     "0.00%",          fill=fill)
     R += 1
 
 # ── SAVE ──────────────────────────────────────────────────────────────────────
