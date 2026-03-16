@@ -106,16 +106,106 @@ Output file: `loan_applications.xlsx`
 | Lead_Source | Online / Branch / DSA / Referral / Walk-in |
 | Application_Date | Last 12 months |
 | FOIR | Existing EMI / Monthly Income |
-| Status | Converted / Not Converted (driven by CIBIL + FOIR logic) |
 
 ### Summary Sheet Sections
 
-1. Executive KPIs (10 values: conversion rate, avg CIBIL, avg income, total loan ask, avg FOIR, etc.)
-2. Conversion by Loan Product
-3. Conversion by Employment Type
-4. Conversion by City Tier
+1. Executive KPIs (total applications, avg CIBIL, avg income, total loan ask, avg FOIR, etc.)
+2. Applications by Loan Product
+3. Applications by Employment Type
+4. Applications by City Tier
 5. CIBIL Band Analysis (600–649 / 650–699 / 700–749 / 750–799 / 800–900)
 6. Lead Source Analysis
+
+---
+
+## Script 3 — Approved Loans (`generate_approved_loans.py`)
+
+Reads `loan_applications.xlsx`, applies BRE eligibility rules, and enriches approved records.
+
+```bash
+python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/generate_approved_loans.py"
+# custom input/output:
+python generate_approved_loans.py --input "C:/path/loan_applications.xlsx" --output "C:/path/to/folder"
+```
+
+Output file: `approved_loans.xlsx` (~137 loans, ~4.6% approval rate from 3,000 applications)
+
+### BRE Eligibility Rules Applied
+
+| Rule | Condition |
+|------|-----------|
+| Loan Type | Personal Loan only |
+| CIBIL Score | > 750 |
+| FOIR (Salaried) | < 20% |
+| FOIR (Self-Employed / Business Owner) | < 15% |
+| Loan Amount | < Rs 15,00,000 |
+| City Tier | Tier 1 or Tier 2 only |
+| Age | 25–50 years |
+
+### Enriched Fields Added
+
+Loan_ID, Approval_Date, Disbursement_Date, Sanctioned_Amount (90–100% of requested),
+Interest_Rate (risk-based 9.5%–14.5% by CIBIL), EMI (reducing balance), Processing_Fee (1–2%)
+
+### Summary Sheet Sections
+
+1. Executive KPIs (approved count, total sanctioned, avg interest rate, avg EMI, avg CIBIL, etc.)
+2. By Employment Type
+3. By City Tier
+4. CIBIL Band Analysis (751–900)
+5. Interest Rate Bands
+6. Lead Source Analysis
+
+---
+
+## Script 4 — Repayment Schedule (`generate_repayment_schedule.py`)
+
+Reads `approved_loans.xlsx`, simulates monthly repayment for all loans applying 3 BRE rule sets.
+
+```bash
+python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/generate_repayment_schedule.py"
+# custom input/output:
+python generate_repayment_schedule.py --input "C:/path/approved_loans.xlsx" --output "C:/path/to/folder"
+```
+
+Output file: `loan_repayment_schedule.xlsx`
+
+### BRE Rule Sets Applied
+
+| Rule Set | Logic |
+|----------|-------|
+| Penal Interest | 2% p.a. calculated daily on outstanding principal when DPD > 0 |
+| Default Penalty | Rs 1,000 flat fee when DPD > 90 |
+| Prepayment Charges | 2% of outstanding principal (full prepayment) or prepaid amount (partial) |
+
+### Payment Profiles Simulated
+
+| Profile | % of Loans | Behaviour |
+|---------|-----------|-----------|
+| Pristine | 45% | Always on time, DPD = 0 |
+| Occasional Delay | 25% | 70% on-time, 20% DPD 15, 10% DPD 45 |
+| Chronic Delay | 10% | Mix of DPD 0/20/45/75/95 |
+| Partial Prepayment | 10% | On-time with one mid-tenure partial prepayment |
+| Full Prepayment | 10% | On-time with full closure at random month |
+
+### Output Columns (21)
+
+Schedule_ID, Loan_ID, EMI_Number, Due_Date, Payment_Date, DPD, DPD_Bucket,
+Opening_Balance, Scheduled_EMI, Principal_Component, Interest_Component,
+Penal_Interest, Prepayment_Amount, Prepayment_Charge, Prepayment_Type,
+Default_Penalty, Loan_Status, Closing_Balance, Payment_Status, Total_Amount_Due, Total_Amount_Paid
+
+### DPD Buckets
+
+Current | DPD 1-30 | DPD 31-60 | DPD 61-90 | DPD 90+
+
+### Summary Sheet Sections
+
+1. Executive KPIs (total EMIs, total collected, total penal interest, total prepayments, NPA count, etc.)
+2. Payment Status Distribution
+3. DPD Bucket Analysis
+4. Loan Status Summary
+5. Prepayment Analysis
 
 ---
 
