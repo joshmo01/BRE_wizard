@@ -118,17 +118,69 @@ Output file: `loan_applications.xlsx`
 
 ---
 
+## Script 2b — Loan Pricing Table (`build_loan_pricing.py`)
+
+Generates a complete pricing table with all combinations of risk dimensions and suggested spreads.
+**Run this before generating approved loans. User should review/update the `Final Rate (%)` column
+before proceeding.** The approved loans generator reads rates directly from this file.
+
+```bash
+python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/build_loan_pricing.py"
+# custom output folder:
+python build_loan_pricing.py --output "C:/path/to/folder"
+```
+
+Output file: `Loan Pricing.xlsx` (two sheets)
+
+### Pricing Dimensions
+
+| Dimension | Values |
+|-----------|--------|
+| Employment Type + Category | Salaried (Govt/PSU/MNC/Private), Self-Employed, Business Owner |
+| CIBIL Score Band | 751-775, 776-800, 801-825, 826-850, 851-900 |
+| Age Group | 25-35, 36-45, 46-50 |
+| Loan Amount | Up to 3L, 3L-7L, 7L-15L |
+| Tenure | 12-24 months, 25-36 months, 37-60 months |
+
+**Total combinations: 810 rows**
+
+### Spread Logic (additive over Base Rate of 9.00%)
+
+| Component | Range |
+|-----------|-------|
+| CIBIL spread | 0.50% (851-900) → 4.00% (751-775) |
+| Employment spread | 0.00% (Govt/PSU) → 1.00% (Business Owner) |
+| Loan amount spread | 0.00% (7L-15L) → +0.50% (Up to 3L) |
+| Tenure spread | -0.25% (short) → +0.25% (long) |
+| Age spread | 0.00% (25-45) → +0.25% (46-50) |
+
+**Final Rate range: 9.25% — 15.00%** (colour-coded green/yellow/red in Excel)
+
+Sheet 2 (`Rate Summary`) shows a pivot of avg rate by CIBIL band × Employment Category.
+
+> **Workflow:** After generating, open `Loan Pricing.xlsx`, review/adjust the `Final Rate (%)`
+> or individual spread columns to reflect your institution's pricing policy, then save and close
+> before running `generate_approved_loans.py`.
+
+---
+
 ## Script 3 — Approved Loans (`generate_approved_loans.py`)
 
 Reads `loan_applications.xlsx`, applies BRE eligibility rules, and enriches approved records.
 
 ```bash
 python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/generate_approved_loans.py"
-# custom input/output:
-python generate_approved_loans.py --input "C:/path/loan_applications.xlsx" --output "C:/path/to/folder"
+# custom input/pricing/output:
+python generate_approved_loans.py --input "C:/path/loan_applications.xlsx" \
+                                   --pricing "C:/path/Loan Pricing.xlsx" \
+                                   --output "C:/path/to/folder"
 ```
 
 Output file: `approved_loans.xlsx` (~137 loans, ~4.6% approval rate from 3,000 applications)
+
+**Interest rates are looked up from `Loan Pricing.xlsx`** using the applicant's Employment Type,
+Employment Category, CIBIL band, Age group, Loan Amount band, and Tenure band.
+If no pricing file is found, falls back to a CIBIL-based formula (9.5%–14.5%).
 
 ### BRE Eligibility Rules Applied
 
