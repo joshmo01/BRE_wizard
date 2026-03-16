@@ -1,0 +1,415 @@
+"""
+Approved Loans Generator
+Reads loan_applications.xlsx, applies Personal Loan BRE eligibility rules,
+enriches approved records, and outputs approved_loans.xlsx.
+
+Usage: python generate_approved_loans.py
+       python generate_approved_loans.py --input "C:/path/to/loan_applications.xlsx"
+                                          --output "C:/path/to/output"
+"""
+
+import argparse
+import math
+import os
+import random
+from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+parser = argparse.ArgumentParser()
+parser.add_argument("--input",  default=r"C:\Users\joshm\OneDrive\Documents\BRE\loan_applications.xlsx")
+parser.add_argument("--output", default=r"C:\Users\joshm\OneDrive\Documents\BRE")
+args = parser.parse_args()
+
+OUT_DIR = args.output
+os.makedirs(OUT_DIR, exist_ok=True)
+random.seed(42)
+np.random.seed(42)
+
+# ── 1. LOAD APPLICATIONS ──────────────────────────────────────────────────────
+df = pd.read_excel(args.input, sheet_name="Applications")
+
+# ── 2. APPLY BRE RULES (mirrors the 9 calcrules rows exactly) ────────────────
+df["loanTypeCheck"]        = (df["Loan_Product"] == "Personal").astype(int)
+df["cibilCheck"]           = (df["CIBIL_Score"] > 750).astype(int)
+df["foirSalariedCheck"]    = ((df["Employment_Type"] == "Salaried") &
+                               (df["FOIR"] < 0.20)).astype(int)
+df["foirNonSalariedCheck"] = (df["Employment_Type"].isin(["Self-Employed", "Business Owner"]) &
+                               (df["FOIR"] < 0.15)).astype(int)
+df["foirCheck"]            = ((df["foirSalariedCheck"] == 1) |
+                               (df["foirNonSalariedCheck"] == 1)).astype(int)
+df["loanAmountCheck"]      = (df["Loan_Amount_Requested"] < 1_500_000).astype(int)
+df["cityTierCheck"]        = (df["City_Tier"].isin(["Tier 1", "Tier 2"])).astype(int)
+df["ageCheck"]             = ((df["Age"] >= 25) & (df["Age"] <= 50)).astype(int)
+
+df["eligibilityStatus"] = (
+    (df["loanTypeCheck"]    == 1) &
+    (df["cibilCheck"]       == 1) &
+    (df["foirCheck"]        == 1) &
+    (df["loanAmountCheck"]  == 1) &
+    (df["cityTierCheck"]    == 1) &
+    (df["ageCheck"]         == 1)
+).map({True: "ELIGIBLE", False: "NOT ELIGIBLE"})
+
+approved = df[df["eligibilityStatus"] == "ELIGIBLE"].copy().reset_index(drop=True)
+print(f"Applications: {len(df):,}  |  Eligible (Personal Loan): {len(approved):,}")
+
+# ── 3. ENRICH APPROVED RECORDS ────────────────────────────────────────────────
+
+def interest_rate_from_cibil(cibil):
+    """Risk-based pricing: higher CIBIL → lower rate. Range 9.5%–14.5%."""
+    base = 0.145 - ((cibil - 751) / (900 - 751)) * 0.05
+    noise = np.random.uniform(-0.003, 0.003)
+    return round(max(0.095, min(0.145, base + noise)), 4)
+
+def calc_emi(principal, annual_rate, tenure_months):
+    """Standard reducing-balance EMI formula."""
+    r = annual_rate / 12
+    if r == 0:
+        return round(principal / tenure_months, 2)
+    return round(principal * r * (1 + r) ** tenure_months /
+                 ((1 + r) ** tenure_months - 1), 2)
+
+loan_ids, approval_dates, disbursement_dates = [], [], []
+sanctioned_amts, interest_rates, emis, processing_fees = [], [], [], []
+
+for _, row in approved.iterrows():
+    app_date     = datetime.strptime(row["Application_Date"], "%Y-%m-%d")
+    appr_date    = app_date    + timedelta(days=random.randint(3, 7))
+    disbur_date  = appr_date   + timedelta(days=random.randint(3, 5))
+
+    # Sanctioned amount — 90–100% of requested (lenders rarely sanction full ask)
+    sanction_pct = np.random.uniform(0.90, 1.00)
+    sanctioned   = round(row["Loan_Amount_Requested"] * sanction_pct, 2)
+
+    rate         = interest_rate_from_cibil(row["CIBIL_Score"])
+    emi          = calc_emi(sanctioned, rate, row["Loan_Tenure_Months"])
+    proc_fee     = round(sanctioned * np.random.uniform(0.01, 0.02), 2)
+
+    loan_ids.append(f"LN-PERS-{_ + 1:04d}")
+    approval_dates.append(appr_date.strftime("%Y-%m-%d"))
+    disbursement_dates.append(disbur_date.strftime("%Y-%m-%d"))
+    sanctioned_amts.append(sanctioned)
+    interest_rates.append(rate)
+    emis.append(emi)
+    processing_fees.append(proc_fee)
+
+approved.insert(0, "Loan_ID",            loan_ids)
+approved["Approval_Date"]      = approval_dates
+approved["Disbursement_Date"]  = disbursement_dates
+approved["Sanctioned_Amount"]  = sanctioned_amts
+approved["Interest_Rate"]      = interest_rates
+approved["EMI"]                = emis
+approved["Processing_Fee"]     = proc_fee
+
+# Keep only clean output columns (drop BRE check columns)
+OUT_COLS = [
+    "Loan_ID", "App_ID", "Age", "Gender", "City", "City_Tier", "State",
+    "Employment_Type", "Employer_Category", "Monthly_Income", "Existing_EMI",
+    "CIBIL_Score", "Loan_Product", "Loan_Amount_Requested", "Sanctioned_Amount",
+    "Loan_Tenure_Months", "Lead_Source", "Application_Date",
+    "Approval_Date", "Disbursement_Date",
+    "FOIR", "Interest_Rate", "EMI", "Processing_Fee",
+]
+approved = approved[OUT_COLS]
+
+# ── 4. STYLES ─────────────────────────────────────────────────────────────────
+NAVY       = PatternFill("solid", fgColor="1F4E79")
+BLUE       = PatternFill("solid", fgColor="2E75B6")
+LIGHT_BLUE = PatternFill("solid", fgColor="D6E4F0")
+ALT        = PatternFill("solid", fgColor="EBF5FB")
+WHITE      = PatternFill("solid", fgColor="FFFFFF")
+
+HDR_FONT   = Font(bold=True, color="FFFFFF", size=10)
+TITLE_FONT = Font(bold=True, color="1F4E79", size=16)
+LABEL_FONT = Font(bold=True, color="1F4E79", size=10)
+KPI_FONT   = Font(bold=True, color="1F4E79", size=12)
+SUB_FONT   = Font(bold=True, color="FFFFFF", size=10)
+
+THIN_SIDE   = Side(style="thin", color="AAAAAA")
+THIN_BORDER = Border(left=THIN_SIDE, right=THIN_SIDE,
+                     top=THIN_SIDE,  bottom=THIN_SIDE)
+
+CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+LEFT   = Alignment(horizontal="left",   vertical="center")
+RIGHT  = Alignment(horizontal="right",  vertical="center")
+
+
+def hdr(ws, row, col, value, fill=NAVY, font=HDR_FONT, align=CENTER):
+    c = ws.cell(row=row, column=col, value=value)
+    c.fill, c.font, c.alignment, c.border = fill, font, align, THIN_BORDER
+    return c
+
+
+def val(ws, row, col, value, fmt=None, fill=WHITE, align=RIGHT):
+    c = ws.cell(row=row, column=col, value=value)
+    if fmt:
+        c.number_format = fmt
+    c.fill, c.alignment, c.border = fill, align, THIN_BORDER
+    return c
+
+
+def section_title(ws, row, title, col_start=1, col_end=6):
+    ws.merge_cells(start_row=row, start_column=col_start,
+                   end_row=row,   end_column=col_end)
+    c = ws.cell(row=row, column=col_start, value=title)
+    c.fill      = NAVY
+    c.font      = Font(bold=True, color="FFFFFF", size=11)
+    c.alignment = Alignment(horizontal="left", vertical="center")
+    c.border    = THIN_BORDER
+    ws.row_dimensions[row].height = 22
+
+
+# ── 5. WORKBOOK ───────────────────────────────────────────────────────────────
+wb = Workbook()
+
+# ── APPROVED LOANS SHEET ──────────────────────────────────────────────────────
+ws_a = wb.active
+ws_a.title = "Approved_Loans"
+
+for ci, name in enumerate(OUT_COLS, 1):
+    hdr(ws_a, 1, ci, name)
+
+# Col index → format
+col_fmts = {
+    10: "#,##0.00",   # Monthly_Income
+    11: "#,##0.00",   # Existing_EMI
+    14: "#,##0.00",   # Loan_Amount_Requested
+    15: "#,##0.00",   # Sanctioned_Amount
+    21: "0.00%",      # FOIR
+    22: "0.00%",      # Interest_Rate
+    23: "#,##0.00",   # EMI
+    24: "#,##0.00",   # Processing_Fee
+}
+for ri, row_data in enumerate(approved.itertuples(index=False), 2):
+    for ci, v in enumerate(row_data, 1):
+        c = ws_a.cell(row=ri, column=ci, value=v)
+        c.border = THIN_BORDER
+        if ci in col_fmts:
+            c.number_format = col_fmts[ci]
+
+col_widths_a = [14, 10, 5, 8, 16, 8, 16, 16, 16, 16, 14, 11, 10, 20, 18, 16, 12, 16, 14, 18, 7, 13, 14, 14]
+for i, w in enumerate(col_widths_a, 1):
+    ws_a.column_dimensions[get_column_letter(i)].width = w
+ws_a.freeze_panes = "A2"
+
+# ── SUMMARY SHEET ─────────────────────────────────────────────────────────────
+ws = wb.create_sheet("Summary")
+ws.sheet_view.showGridLines = False
+
+for col, w in {1: 28, 2: 18, 3: 18, 4: 18, 5: 18, 6: 18}.items():
+    ws.column_dimensions[get_column_letter(col)].width = w
+
+# Dynamic formula ranges based on actual approved count
+NUM      = len(approved)
+last_row = NUM + 1
+
+def rng(col):
+    return f"Approved_Loans!${col}$2:${col}${last_row}"
+
+LOAN_ID  = rng("A")
+EMP      = rng("H")
+INC      = rng("J")
+EMI_R    = rng("K")
+CIB      = rng("L")
+S_AMT    = rng("O")   # Sanctioned_Amount
+TEN      = rng("P")
+FOIR_R   = rng("U")
+RATE     = rng("V")
+EMI_COL  = rng("W")
+PROC_FEE = rng("X")
+TIER     = rng("F")
+SRC      = rng("Q")
+
+today = datetime(2026, 3, 16)
+
+# ── TITLE ─────────────────────────────────────────────────────────────────────
+ws.merge_cells("A1:F1")
+c = ws["A1"]
+c.value     = "APPROVED LOANS SUMMARY — PERSONAL LOAN"
+c.font      = TITLE_FONT
+c.fill      = LIGHT_BLUE
+c.alignment = CENTER
+c.border    = THIN_BORDER
+ws.row_dimensions[1].height = 36
+
+ws.merge_cells("A2:F2")
+c = ws["A2"]
+c.value     = (f"Generated: {today.strftime('%d %b %Y')} | "
+               f"Approved Records: {NUM:,} | "
+               f"Rule: Personal Loan BRE Eligibility")
+c.font      = Font(italic=True, color="666666", size=9)
+c.fill      = WHITE
+c.alignment = CENTER
+c.border    = THIN_BORDER
+
+R = 4
+
+# ── SECTION 1: Executive KPIs ─────────────────────────────────────────────────
+section_title(ws, R, "  EXECUTIVE KPIs")
+R += 1
+
+kpis = [
+    ("Total Approved Loans",        f"=COUNTA({LOAN_ID})",               "0"),
+    ("Total Sanctioned Amount (Rs)",f"=SUM({S_AMT})",                    "#,##0.00"),
+    ("Avg Sanctioned Amount (Rs)",  f"=AVERAGE({S_AMT})",                "#,##0.00"),
+    ("Avg CIBIL Score",             f"=AVERAGE({CIB})",                  "0.0"),
+    ("Avg Interest Rate (%)",       f"=AVERAGE({RATE})",                 "0.00%"),
+    ("Avg EMI (Rs)",                f"=AVERAGE({EMI_COL})",              "#,##0.00"),
+    ("Avg FOIR",                    f"=AVERAGE({FOIR_R})",               "0.00%"),
+    ("Avg Loan Tenure (Months)",    f"=AVERAGE({TEN})",                  "0.0"),
+    ("Total Processing Fees (Rs)",  f"=SUM({PROC_FEE})",                 "#,##0.00"),
+    ("Avg Monthly Income (Rs)",     f"=AVERAGE({INC})",                  "#,##0.00"),
+]
+
+for idx, (label, formula, fmt) in enumerate(kpis):
+    row = R + (idx // 2)
+    col = 1 if idx % 2 == 0 else 4
+
+    lc = ws.cell(row=row, column=col, value=label)
+    lc.font, lc.fill, lc.alignment, lc.border = LABEL_FONT, LIGHT_BLUE, LEFT, THIN_BORDER
+
+    ws.merge_cells(start_row=row, start_column=col+1,
+                   end_row=row,   end_column=col+2)
+    vc = ws.cell(row=row, column=col+1, value=formula)
+    vc.font, vc.fill, vc.number_format = KPI_FONT, WHITE, fmt
+    vc.alignment, vc.border = CENTER, THIN_BORDER
+
+R += (len(kpis) + 1) // 2 + 1
+
+# ── SECTION 2: Approved Loans by Employment Type ──────────────────────────────
+section_title(ws, R, "  APPROVED LOANS BY EMPLOYMENT TYPE")
+R += 1
+
+for ci, h in enumerate(["Employment Type", "Count", "% of Total",
+                         "Avg Sanctioned (Rs)", "Avg CIBIL", "Avg Interest Rate"], 1):
+    hdr(ws, R, ci, h, fill=BLUE, font=SUB_FONT)
+ws.row_dimensions[R].height = 28
+R += 1
+
+for i, emp in enumerate(["Salaried", "Self-Employed", "Business Owner"]):
+    fill = ALT if i % 2 == 0 else WHITE
+    val(ws, R, 1, emp,                                                           fill=fill, align=LEFT)
+    val(ws, R, 2, f'=COUNTIF({EMP},"{emp}")',                   "#,##0",         fill=fill)
+    val(ws, R, 3, f'=IFERROR(COUNTIF({EMP},"{emp}")/COUNTA({LOAN_ID}),0)', "0.00%", fill=fill)
+    val(ws, R, 4, f'=AVERAGEIF({EMP},"{emp}",{S_AMT})',         "#,##0.00",      fill=fill)
+    val(ws, R, 5, f'=AVERAGEIF({EMP},"{emp}",{CIB})',           "0.0",           fill=fill)
+    val(ws, R, 6, f'=AVERAGEIF({EMP},"{emp}",{RATE})',          "0.00%",         fill=fill)
+    R += 1
+
+R += 1
+
+# ── SECTION 3: Approved Loans by City Tier ───────────────────────────────────
+section_title(ws, R, "  APPROVED LOANS BY CITY TIER")
+R += 1
+
+for ci, h in enumerate(["City Tier", "Count", "% of Total",
+                         "Avg Sanctioned (Rs)", "Avg CIBIL", "Avg EMI (Rs)"], 1):
+    hdr(ws, R, ci, h, fill=BLUE, font=SUB_FONT)
+ws.row_dimensions[R].height = 28
+R += 1
+
+for i, tier in enumerate(["Tier 1", "Tier 2"]):
+    fill = ALT if i % 2 == 0 else WHITE
+    val(ws, R, 1, tier,                                                           fill=fill, align=LEFT)
+    val(ws, R, 2, f'=COUNTIF({TIER},"{tier}")',                  "#,##0",         fill=fill)
+    val(ws, R, 3, f'=IFERROR(COUNTIF({TIER},"{tier}")/COUNTA({LOAN_ID}),0)', "0.00%", fill=fill)
+    val(ws, R, 4, f'=AVERAGEIF({TIER},"{tier}",{S_AMT})',        "#,##0.00",      fill=fill)
+    val(ws, R, 5, f'=AVERAGEIF({TIER},"{tier}",{CIB})',          "0.0",           fill=fill)
+    val(ws, R, 6, f'=AVERAGEIF({TIER},"{tier}",{EMI_COL})',      "#,##0.00",      fill=fill)
+    R += 1
+
+R += 1
+
+# ── SECTION 4: CIBIL Band Analysis ───────────────────────────────────────────
+section_title(ws, R, "  CIBIL BAND ANALYSIS")
+R += 1
+
+for ci, h in enumerate(["CIBIL Band", "Count", "% of Total",
+                         "Avg Sanctioned (Rs)", "Avg Interest Rate", "Avg EMI (Rs)"], 1):
+    hdr(ws, R, ci, h, fill=BLUE, font=SUB_FONT)
+ws.row_dimensions[R].height = 28
+R += 1
+
+# Only bands > 750 since CIBIL > 750 is a hard rule
+cibil_bands = [
+    ("751 - 800", 751, 800),
+    ("801 - 850", 801, 850),
+    ("851 - 900", 851, 900),
+]
+
+for i, (label, lo, hi) in enumerate(cibil_bands):
+    fill = ALT if i % 2 == 0 else WHITE
+    mask = f"({CIB}>={lo})*({CIB}<={hi})"
+    val(ws, R, 1, label,                                                                         fill=fill, align=LEFT)
+    val(ws, R, 2, f"=SUMPRODUCT({mask}*1)",                                       "#,##0",       fill=fill)
+    val(ws, R, 3, f"=IFERROR(SUMPRODUCT({mask}*1)/COUNTA({LOAN_ID}),0)",          "0.00%",       fill=fill)
+    val(ws, R, 4, f"=IFERROR(SUMPRODUCT({mask}*{S_AMT})/SUMPRODUCT({mask}*1),0)", "#,##0.00",    fill=fill)
+    val(ws, R, 5, f"=IFERROR(SUMPRODUCT({mask}*{RATE})/SUMPRODUCT({mask}*1),0)",  "0.00%",       fill=fill)
+    val(ws, R, 6, f"=IFERROR(SUMPRODUCT({mask}*{EMI_COL})/SUMPRODUCT({mask}*1),0)", "#,##0.00",  fill=fill)
+    R += 1
+
+R += 1
+
+# ── SECTION 5: Interest Rate Band Analysis ────────────────────────────────────
+section_title(ws, R, "  INTEREST RATE BAND ANALYSIS")
+R += 1
+
+for ci, h in enumerate(["Rate Band", "Count", "% of Total",
+                         "Avg Sanctioned (Rs)", "Avg CIBIL", "Total EMI (Rs)"], 1):
+    hdr(ws, R, ci, h, fill=BLUE, font=SUB_FONT)
+ws.row_dimensions[R].height = 28
+R += 1
+
+rate_bands = [
+    ("Below 11%",   0,     0.11),
+    ("11% – 12.5%", 0.11,  0.125),
+    ("12.5% – 14%", 0.125, 0.14),
+    ("14% & above", 0.14,  1.0),
+]
+
+for i, (label, lo, hi) in enumerate(rate_bands):
+    fill = ALT if i % 2 == 0 else WHITE
+    mask = f"({RATE}>={lo})*({RATE}<{hi})"
+    val(ws, R, 1, label,                                                                         fill=fill, align=LEFT)
+    val(ws, R, 2, f"=SUMPRODUCT({mask}*1)",                                       "#,##0",       fill=fill)
+    val(ws, R, 3, f"=IFERROR(SUMPRODUCT({mask}*1)/COUNTA({LOAN_ID}),0)",          "0.00%",       fill=fill)
+    val(ws, R, 4, f"=IFERROR(SUMPRODUCT({mask}*{S_AMT})/SUMPRODUCT({mask}*1),0)", "#,##0.00",    fill=fill)
+    val(ws, R, 5, f"=IFERROR(SUMPRODUCT({mask}*{CIB})/SUMPRODUCT({mask}*1),0)",   "0.0",         fill=fill)
+    val(ws, R, 6, f"=SUMPRODUCT({mask}*{EMI_COL})",                               "#,##0.00",    fill=fill)
+    R += 1
+
+R += 1
+
+# ── SECTION 6: Lead Source Analysis ──────────────────────────────────────────
+section_title(ws, R, "  LEAD SOURCE ANALYSIS")
+R += 1
+
+for ci, h in enumerate(["Lead Source", "Count", "% of Total",
+                         "Avg Sanctioned (Rs)", "Avg CIBIL", "Avg Interest Rate"], 1):
+    hdr(ws, R, ci, h, fill=BLUE, font=SUB_FONT)
+ws.row_dimensions[R].height = 28
+R += 1
+
+for i, src in enumerate(["Online", "Branch", "DSA", "Referral", "Walk-in"]):
+    fill = ALT if i % 2 == 0 else WHITE
+    val(ws, R, 1, src,                                                                fill=fill, align=LEFT)
+    val(ws, R, 2, f'=COUNTIF({SRC},"{src}")',                      "#,##0",           fill=fill)
+    val(ws, R, 3, f'=IFERROR(COUNTIF({SRC},"{src}")/COUNTA({LOAN_ID}),0)', "0.00%",  fill=fill)
+    val(ws, R, 4, f'=AVERAGEIF({SRC},"{src}",{S_AMT})',            "#,##0.00",        fill=fill)
+    val(ws, R, 5, f'=AVERAGEIF({SRC},"{src}",{CIB})',              "0.0",             fill=fill)
+    val(ws, R, 6, f'=AVERAGEIF({SRC},"{src}",{RATE})',             "0.00%",           fill=fill)
+    R += 1
+
+# ── 6. SAVE ───────────────────────────────────────────────────────────────────
+out_path = os.path.join(OUT_DIR, "approved_loans.xlsx")
+wb.save(out_path)
+print(f"Approved loans saved: {out_path}")
+print(f"  Total applications  : {len(df):,}")
+print(f"  Eligible (approved) : {NUM:,}")
+print(f"  Approval rate       : {NUM/len(df)*100:.1f}%")
