@@ -44,7 +44,7 @@ python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/generate_
   --tgt-active-loans      870
 ```
 
-Omit any `--tgt-*` arg to show "— No Target Set" for that KPI.
+Omit any `--tgt-*` arg to default that KPI's target to the dashboard's actual value (will always show ▲ On Track in green).
 
 ---
 

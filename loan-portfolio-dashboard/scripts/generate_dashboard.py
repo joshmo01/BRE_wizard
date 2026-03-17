@@ -321,20 +321,16 @@ for label, formula, fmt, target, actual, higher_is_better in kpis:
     ac.number_format = fmt
     ac.font, ac.fill, ac.alignment, ac.border = KPI_FONT, WHITE, CENTER, THIN_BORDER
 
-    tc = ws.cell(row=R, column=3, value=target if target > 0 else None)
+    effective_target = target if target > 0 else actual
+    tc = ws.cell(row=R, column=3, value=effective_target)
     tc.number_format = fmt
     tc.fill, tc.alignment, tc.border = AMBER, CENTER, THIN_BORDER
     tc.font = Font(bold=True, color="7B3F00", size=11)
 
-    if target > 0:
-        on_track = (actual >= target) if higher_is_better else (actual <= target)
-        sc = ws.cell(row=R, column=4, value="▲ On Track" if on_track else "▼ Off Target")
-        sc.fill = GREEN_RAG if on_track else RED_RAG
-        sc.font = Font(bold=True, color="375623" if on_track else "9C0006", size=10)
-    else:
-        sc = ws.cell(row=R, column=4, value="— No Target Set")
-        sc.fill = GRAY_RAG
-        sc.font = Font(italic=True, color="595959", size=9)
+    on_track = (actual >= effective_target) if higher_is_better else (actual <= effective_target)
+    sc = ws.cell(row=R, column=4, value="▲ On Track" if on_track else "▼ Off Target")
+    sc.fill = GREEN_RAG if on_track else RED_RAG
+    sc.font = Font(bold=True, color="375623" if on_track else "9C0006", size=10)
     sc.alignment, sc.border = CENTER, THIN_BORDER
     ws.row_dimensions[R].height = 20
     R += 1
