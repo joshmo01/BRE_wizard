@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loan Portfolio Pipeline — Workflow</title>
+<style>
+  :root {
+    --bg:        #0f1117;
+    --surface:   #1a1d2e;
+    --border:    #2a2d3e;
+    --text:      #e2e8f0;
+    --muted:     #8892a4;
+    --purple:    #7c3aed;
+    --purple-bg: #1e1030;
+    --blue:      #2563eb;
+    --blue-bg:   #0d1f3c;
+    --orange:    #d97706;
+    --orange-bg: #2a1a00;
+    --green:     #059669;
+    --green-bg:  #021f14;
+    --gold:      #b45309;
+    --gold-bg:   #2a1a00;
+    --red:       #dc2626;
+    --red-bg:    #2a0a0a;
+    --stop-bg:   #1a0a0a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header h1 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -0.3px;
+  }
+  .header p { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    transition: all .2s;
+  }
+  .legend-item:hover { border-color: var(--border); color: var(--text); }
+  .legend-item.active { border-color: var(--border); color: var(--text); background: var(--surface); }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── LAYOUT ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: calc(100vh - 73px);
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 20px 16px;
+  }
+  .sidebar h3 {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+  .filter-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    border-radius: 6px;
+    border: none;
+    background: none;
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    text-align: left;
+    transition: background .15s;
+    margin-bottom: 2px;
+  }
+  .filter-btn:hover { background: var(--border); }
+  .filter-btn.active { background: var(--border); }
+  .filter-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  .sidebar-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 16px 0;
+  }
+
+  .stats-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .stats-label { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+  .stats-value { font-size: 20px; font-weight: 700; color: #fff; }
+
+  /* ── MAIN PIPELINE ── */
+  .pipeline-wrap {
+    padding: 32px 48px;
+    overflow-y: auto;
+  }
+
+  .pipeline {
+    max-width: 680px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* ── STEP CARD ── */
+  .step-card {
+    border-radius: 10px;
+    border: 1.5px solid var(--border);
+    padding: 14px 18px;
+    cursor: pointer;
+    transition: all .2s;
+    position: relative;
+  }
+  .step-card:hover { transform: translateX(3px); }
+  .step-card.selected { transform: translateX(3px); }
+
+  .step-card.type-interview { border-color: var(--purple); background: var(--purple-bg); }
+  .step-card.type-datagen   { border-color: var(--blue);   background: var(--blue-bg); }
+  .step-card.type-config    { border-color: var(--orange);  background: var(--orange-bg); }
+  .step-card.type-dashboard { border-color: var(--green);   background: var(--green-bg); }
+  .step-card.type-final     {
+    border-color: var(--gold);
+    background: var(--gold-bg);
+    box-shadow: 0 0 20px rgba(180, 83, 9, 0.25);
+  }
+
+  .step-card.hidden { display: none; }
+
+  .step-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .step-badge {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    padding: 3px 7px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .type-interview .step-badge { background: var(--purple); color: #fff; }
+  .type-datagen   .step-badge { background: var(--blue);   color: #fff; }
+  .type-config    .step-badge { background: var(--orange);  color: #fff; }
+  .type-dashboard .step-badge { background: var(--green);   color: #fff; }
+  .type-final     .step-badge { background: var(--gold);    color: #fff; }
+
+  .step-content { flex: 1; }
+  .step-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 3px;
+  }
+  .step-script {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  .step-output {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text);
+    margin-bottom: 5px;
+  }
+  .step-output-icon { font-size: 10px; }
+  .step-desc {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .step-desc.collapsed { display: none; }
+
+  .expand-btn {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .expand-btn:hover { color: var(--text); border-color: var(--text); }
+
+  /* ── CONNECTOR ── */
+  .connector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+  }
+  .connector-line {
+    width: 2px;
+    height: 18px;
+    background: var(--border);
+  }
+  .connector-arrow {
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid var(--border);
+  }
+
+  /* ── MANDATORY STOP ── */
+  .stop-node {
+    border-radius: 8px;
+    border: 1.5px solid var(--red);
+    background: var(--stop-bg);
+    padding: 10px 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: all .2s;
+    cursor: default;
+  }
+  .stop-node.hidden { display: none; }
+  .stop-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .stop-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--red);
+    margin-bottom: 1px;
+  }
+  .stop-action {
+    font-size: 12px;
+    color: #f87171;
+  }
+
+  .connector-stop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .connector-line-red {
+    width: 2px;
+    height: 18px;
+    background: var(--red);
+    opacity: 0.5;
+  }
+  .connector-arrow-red {
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid var(--red);
+    opacity: 0.6;
+  }
+
+  /* ── DETAIL PANEL ── */
+  .detail-panel {
+    position: fixed;
+    right: 0;
+    top: 73px;
+    bottom: 0;
+    width: 320px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    padding: 24px 20px;
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform .25s ease;
+    z-index: 50;
+  }
+  .detail-panel.open { transform: translateX(0); }
+
+  .detail-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: var(--border);
+    border: none;
+    color: var(--text);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .detail-type-badge {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    display: inline-block;
+  }
+  .detail-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 6px;
+  }
+  .detail-section {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .detail-section-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .detail-value {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .detail-tag {
+    display: inline-block;
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid var(--border);
+    margin: 2px;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div>
+    <h1>Loan Portfolio Pipeline — End-to-End Workflow</h1>
+    <p>10 steps · 5 mandatory review stops · 1 comprehensive final output</p>
+  </div>
+  <div class="legend">
+    <div class="legend-item active" onclick="filterType('interview', this)">
+      <div class="legend-dot" style="background:#7c3aed"></div> Interview / Setup
+    </div>
+    <div class="legend-item active" onclick="filterType('datagen', this)">
+      <div class="legend-dot" style="background:#2563eb"></div> Data Generation
+    </div>
+    <div class="legend-item active" onclick="filterType('config', this)">
+      <div class="legend-dot" style="background:#d97706"></div> Config / Review
+    </div>
+    <div class="legend-item active" onclick="filterType('dashboard', this)">
+      <div class="legend-dot" style="background:#059669"></div> Analytics
+    </div>
+    <div class="legend-item active" onclick="filterType('final', this)">
+      <div class="legend-dot" style="background:#b45309"></div> Final Output
+    </div>
+    <div class="legend-item active" onclick="filterStops(this)">
+      <div class="legend-dot" style="background:#dc2626"></div> Mandatory Stops
+    </div>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <h3>View Presets</h3>
+    <button class="filter-btn active" onclick="showAll(this)">
+      <div class="filter-dot" style="background:#8892a4"></div> Full Pipeline
+    </button>
+    <button class="filter-btn" onclick="showOnly(['datagen','config'], this)">
+      <div class="filter-dot" style="background:#2563eb"></div> Data Flow Only
+    </button>
+    <button class="filter-btn" onclick="showOnly(['dashboard','final'], this)">
+      <div class="filter-dot" style="background:#059669"></div> Dashboards Only
+    </button>
+    <button class="filter-btn" onclick="showStopsOnly(this)">
+      <div class="filter-dot" style="background:#dc2626"></div> Review Points
+    </button>
+
+    <hr class="sidebar-divider">
+    <h3>Pipeline Stats</h3>
+    <div class="stats-card">
+      <div class="stats-label">Total Steps</div>
+      <div class="stats-value">10</div>
+    </div>
+    <div class="stats-card">
+      <div class="stats-label">Mandatory Stops</div>
+      <div class="stats-value" style="color:#f87171">5</div>
+    </div>
+    <div class="stats-card">
+      <div class="stats-label">Output Files</div>
+      <div class="stats-value" style="color:#6ee7b7">9</div>
+    </div>
+    <div class="stats-card">
+      <div class="stats-label">Final Dashboard Sheets</div>
+      <div class="stats-value" style="color:#fbbf24">6</div>
+    </div>
+
+    <hr class="sidebar-divider">
+    <h3>Click a step</h3>
+    <p style="font-size:11px;color:var(--muted);line-height:1.5">
+      Click any step card to see script details, output format, and CLI args in the detail panel.
+    </p>
+  </div>
+
+  <!-- PIPELINE -->
+  <div class="pipeline-wrap">
+    <div class="pipeline" id="pipeline">
+
+      <!-- STEP 0 -->
+      <div class="step-card type-interview" data-id="s0"
+           onclick="selectStep('s0')">
+        <button class="expand-btn" onclick="event.stopPropagation(); toggleExpand('s0')">details</button>
+        <div class="step-header">
+          <span class="step-badge">Step 0</span>
+          <div class="step-content">
+            <div class="step-title">Portfolio Interview</div>
+            <div class="step-script">— no script — Claude conducts interview —</div>
+            <div class="step-output">
+              <span class="step-output-icon">📋</span> User-confirmed distribution settings
+            </div>
+            <div class="step-desc collapsed" id="desc-s0">
+              Ask the user about product mix (Personal/Home/Auto/Business), employment type split (Salaried/SEP/Business Owner), city tier distribution (Tier 1/2/3), loan amount ranges per product, and total record count.<br><br>
+              <strong>Outputs:</strong> CLI arg string passed to Step 1
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STOP 0 -->
+      <div class="connector-stop" id="stop-0">
+        <div class="connector-line-red"></div>
+        <div class="stop-node">
+          <span class="stop-icon">🛑</span>
+          <div>
+            <div class="stop-label">Mandatory Stop</div>
+            <div class="stop-action">Wait for user to confirm portfolio distribution before generating data</div>
+          </div>
+        </div>
+        <div class="connector-line-red"></div>
+        <div class="connector-arrow-red"></div>
+      </div>
+
+      <!-- STEP 1 -->
+      <div class="step-card type-datagen" data-id="s1"
+           onclick="selectStep('s1')">
+        <button class="expand-btn" onclick="event.stopPropagation(); toggleExpand('s1')">details</button>
+        <div class="step-header">
+          <span class="step-badge">Step 1</span>
+          <div class="step-content">
+            <div class="step-title">Generate Loan Applications</div>
+            <div class="step-script">generate_loan_applications.py</div>
+            <div class="step-output">
+              <span class="step-output-icon">📄</span> loan_applications.xlsx
+            </div>
+            <div class="step-desc collapsed" id="desc-s1">
+              Generates 3,000 synthetic Indian loan application records using parameterised distributions from the Step 0 interview. Includes App_ID, Age, Gender, City, City_Tier, Employment_Type, Monthly_Income, CIBIL_Score, Loan_Product, FOIR, and more.<br><br>
+              <strong>CLI args:</strong> --records, --product-weights, --emp-weights, --tier-weights, --loan-amt-*
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONNECTOR -->
+      <div class="connector"><div class="connector-line"></div><div class="connector-arrow"></div></div>
+
+      <!-- STEP 2a -->
+      <div class="step-card type-config" data-id="s2a"
+           onclick="selectStep('s2a')">
+        <button class="expand-btn" onclick="event.stopPropagation(); toggleExpand('s2a')">details</button>
+        <div class="step-header">
+          <span class="step-badge">Step 2a</span>
+          <div class="step-content">
+            <div class="step-title">Build Loan Pricing Table</div>
+            <div class="step-script">build_loan_pricing.py</div>
+            <div class="step-output">
+              <span class="step-output-icon">📄</span> Loan Pricing.xlsx
+            </div>
+            <div class="step-desc collapsed" id="desc-s2a">
+              Generates 810 rate combinations across 5 risk dimensions: CIBIL band, Employment Type/Category, Loan Amount range, Tenure range, and Age group. Base Rate 9.00%. Final rates 9.25%–15.00%, colour-coded green/yellow/red.<br><br>
+              <strong>Sheets:</strong> Pricing Table (810 rows), Rate Summary (pivot)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STOP 2a -->
+      <div class="connector-stop" id="stop-2a">
+        <div class="connector-line-red"></div>
+        <div class="stop-node">
+          <span class="stop-icon">🛑</span>
+          <div>
+            <div class="stop-label">Mandatory Stop — Pricing Review</div>
+            <div class="stop-action">User opens Loan Pricing.xlsx, reviews/adjusts Final Rate (%) column, then saves and closes</div>
+          </div>
+        </div>
+        <div class="connector-line-red"></div>
+        <div class="connector-arrow-red"></div>
+      </div>
+
+      <!-- STEP 2b -->
+      <div class="step-card type-config" data-id="s2b"
+           onclick="selectStep('s2b')">
+        <button class="expand-btn" onclick="event.stopPropagation(); toggleExpand('s2b')">details</button>
+        <div class="step-header">
+          <span class="step-badge">Step 2b</span>
+          <div class="step-content">
+            <div class="step-title">Build Eligibility Rules</div>
+            <div class="step-script">build_loan_eligibility_rules.py</div>
+            <div class="step-output">
+              <span class="step-output-icon">📄</span> Loan Eligibility Rules.xlsx
+            </div>
+            <div class="step-desc collapsed" id="desc-s2b">
+              Generates 8 BRE eligibility rules (R001–R008) with editable amber Value cells.<br><br>
+              R001 Loan Product · R002 CIBIL Min · R003 FOIR Salaried · R004 FOIR Non-Salaried · R005 Max Loan Amount · R006 City Tier · R007 Min Age · R008 Max Age<br><br>
+              <strong>Sheets:</strong> Eligibility Rules (editable), Rule Summary (reference)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STOP 2b -->
+      <div class="connector-stop" id="stop-2b">
+        <div class="connector-line-red"></div>
+        <div class="stop-node">
+          <span class="stop-icon">🛑</span>
+          <div>
+            <div class="stop-label">Mandatory Stop — Rules Review</div>
+            <div class="stop-action">User reviews/adjusts amber Value column for R001–R008, sets Enabled=No for any rule to skip</div>
+          </div>
+        </div>
+        <div class="connector-line-red"></div>
+        <div class="connector-arrow-red"></div>
+      </div>
+
+      <!-- STEP 3 -->
+      <div class="step-card type-datagen" data-id="s3"
+           onclick="selectStep('s3')">
+        <button class="expand-btn" onclick="event.stopPropagation(); toggleExpand('s3')">details</button>
+        <div class="step-header">
+          <span class="step-badge">Step 3</span>
+          <div class="step-content">
+            <div class="step-title">Generate Approved Loans</div>
+            <div class="step-script">generate_approved_loans.py</div>
+            <div class="step-output">
+              <span class="step-output-icon">📄</span> approved_loans.xlsx
+            </div>
+            <div class="step-desc collapsed" id="desc-s3">
+              Reads loan_applications.xlsx, applies BRE rules from Loan Eligibility Rules.xlsx, and looks up interest rates from Loan Pricing.xlsx. Adds Loan_ID, Approval_Date, Sanctioned_Amount, Interest_Rate, EMI, Processing_Fee.<br><br>
+              <strong>Typical approval rate:</strong> ~5% of applications<br>
+              <strong>Sheets:</strong> Approved_Loans, Summary
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONNECTOR -->
+      <div class="connector"><div class="connector-line"></div><div class="connector-arrow"></div></div>
+
+      <!-- STEP 3b -->
+      <div class="step-card type-config" data-id="s3b"
+           onclick="selectStep('s3b')">
+        <button class="expand-btn" onclick="event.stopPropagation(); toggleExpand('s3b')">details</button>
+        <div class="step-header">
+          <span class="step-badge">Step 3b</span>
+          <div class="step-content">
+            <div class="step-title">Build Repayment Assumptions</div>
+            <div class="step-script">build_repayment_assumptions.py</div>
+            <div class="step-output">
+              <span class="step-output-icon">📄</span> Repayment Assumptions.xlsx
+            </div>
+            <div class="step-desc collapsed" id="desc-s3b">
+              Generates a 6-section editable config file with all repayment simulation assumptions.<br><br>
+              §1 Payment Profile Distribution (Pristine/OccDelay/Chronic/PartialPrepay/FullPrepay)<br>
+              §2 DPD Distribution — Occasional Delay<br>
+              §3 DPD Distribution — Chronic Delay<br>
+              §4 Partial Prepayment parameters<br>
+              §5 Full Prepayment parameters<br>
+              §6 Write-offs & Penal rules (NPA DPD, penal rate, default penalty)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STOP 3b -->
+      <div class="connector-stop" id="stop-3b">
+        <div class="connector-line-red"></div>
+        <div class="stop-node">
+          <span class="stop-icon">🛑</span>
+          <div>
+            <div class="stop-label">Mandatory Stop — Repayment Config Review</div>
+            <div class="stop-action">User reviews all 6 sections (amber cells), ensures % columns in §1–§3 sum to 100</div>
+          </div>
+        </div>
+        <div class="connector-line-red"></div>
+        <div class="connector-arrow-red"></div>
+      </div>
+
+      <!-- STEP 4 -->
+      <div class="step-card type-datagen" data-id="s4"
+           onclick="selectStep('s4')">
+        <button class="expand-btn" onclick="event.stopPropagation(); toggleExpand('s4')">details</button>
+        <div class="step-header">
+          <span class="step-badge">Step 4</span>
+          <div class="step-content">
+            <div class="step-title">Generate Repayment Schedule</div>
+            <div class="step-script">generate_repayment_schedule.py</div>
+            <div class="step-output">
+              <span class="step-output-icon">📄</span> loan_repayment_schedule.xlsx
+            </div>
+            <div class="step-desc collapsed" id="desc-s4">
+              Reads approved_loans.xlsx and simulates monthly repayment for all loans. Applies 5 payment profiles, calculates DPD/DPD Bucket, penal interest, prepayment charges, default penalties.<br><br>
+              <strong>21 output columns:</strong> Schedule_ID, Loan_ID, EMI_Number, Due_Date, DPD, Opening_Balance, Scheduled_EMI, Penal_Interest, Prepayment_Amount, Loan_Status …<br>
+              <strong>DPD buckets:</strong> Current · 1-30 · 31-60 · 61-90 · 90+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONNECTOR -->
+      <div class="connector"><div class="connector-line"></div><div class="connector-arrow"></div></div>
+
+      <!-- STEP 5 -->
+      <div class="step-card type-dashboard" data-id="s5"
+           onclick="selectStep('s5')">
+        <button class="expand-btn" onclick="event.stopPropagation(); toggleExpand('s5')">details</button>
+        <div class="step-header">
+          <span class="step-badge">Step 5</span>
+          <div class="step-content">
+            <div class="step-title">Repayment Dashboard</div>
+            <div class="step-script">generate_repayment_dashboard.py</div>
+            <div class="step-output">
+              <span class="step-output-icon">📊</span> repayment_dashboard.xlsx
+            </div>
+            <div class="step-desc collapsed" id="desc-s5">
+              Reads loan_repayment_schedule.xlsx and builds a formula-driven analytics dashboard.<br><br>
+              §1 Executive KPIs (total EMIs, collected, penal interest, prepayments, NPA count)<br>
+              §2 Payment Status Distribution<br>
+              §3 DPD Bucket Analysis<br>
+              §4 Loan Status Summary<br>
+              §5 Prepayment Analysis
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONNECTOR -->
+      <div class="connector"><div class="connector-line"></div><div class="connector-arrow"></div></div>
+
+      <!-- STEP 6 -->
+      <div class="step-card type-dashboard" data-id="s6"
+           onclick="selectStep('s6')">
+        <button class="expand-btn" onclick="event.stopPropagation(); toggleExpand('s6')">details</button>
+        <div class="step-header">
+          <span class="step-badge">Step 6</span>
+          <div class="step-content">
+            <div class="step-title">Lifecycle Dashboard</div>
+            <div class="step-script">generate_lifecycle_dashboard.py</div>
+            <div class="step-output">
+              <span class="step-output-icon">📊</span> loan_lifecycle_dashboard.xlsx
+            </div>
+            <div class="step-desc collapsed" id="desc-s6">
+              Reads all three pipeline files and builds a unified cross-file lifecycle view.<br><br>
+              §1 Lifecycle KPIs (approval rate, collection efficiency, portfolio yield)<br>
+              §2 Applications by Lead Source<br>
+              §3 Approved Loans by Employment Type<br>
+              §4 Approved Loans by City Tier<br>
+              §5 CIBIL Band Analysis<br>
+              §6 Repayment Performance by Payment Status<br><br>
+              <strong>Sheets:</strong> Dashboard + 3 data sheets (Applications, Approved_Loans, Repayment_Schedule)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STOP 7 -->
+      <div class="connector-stop" id="stop-7">
+        <div class="connector-line-red"></div>
+        <div class="stop-node">
+          <span class="stop-icon">🛑</span>
+          <div>
+            <div class="stop-label">Mandatory Stop — Target KPI Interview</div>
+            <div class="stop-action">Ask user for target values for all 10 Executive KPIs before generating final dashboard</div>
+          </div>
+        </div>
+        <div class="connector-line-red"></div>
+        <div class="connector-arrow-red"></div>
+      </div>
+
+      <!-- STEP 7 -->
+      <div class="step-card type-final" data-id="s7"
+           onclick="selectStep('s7')">
+        <button class="expand-btn" onclick="event.stopPropagation(); toggleExpand('s7')">details</button>
+        <div class="step-header">
+          <span class="step-badge">Step 7 · Final</span>
+          <div class="step-content">
+            <div class="step-title">Comprehensive Portfolio Dashboard</div>
+            <div class="step-script">generate_dashboard.py</div>
+            <div class="step-output">
+              <span class="step-output-icon">🏆</span> loan_portfolio_dashboard.xlsx — 6 sheets
+            </div>
+            <div class="step-desc collapsed" id="desc-s7">
+              <strong>Final output</strong> — consolidates the full pipeline into one workbook.<br><br>
+              📋 <strong>Data</strong> — 1,000 synthetic portfolio records<br>
+              📊 <strong>Dashboard</strong> — 6 sections + Executive KPIs (Actual vs Target with RAG ▲▼)<br>
+              🔧 <strong>Portfolio Setup</strong> — Step 0 interview answers: product mix, employment, city tiers, loan amounts<br>
+              💰 <strong>Pricing Summary</strong> — Spread logic + rate pivot by CIBIL × Employment<br>
+              ✅ <strong>Eligibility Rules</strong> — R001–R008 as configured<br>
+              📅 <strong>Repayment Config</strong> — All 6 assumption sections as configured<br><br>
+              <strong>Args:</strong> --pricing, --rules, --assumptions, --tgt-npa-rate, --tgt-total-outstanding, etc.
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /pipeline -->
+  </div><!-- /pipeline-wrap -->
+</div><!-- /layout -->
+
+<!-- DETAIL PANEL -->
+<div class="detail-panel" id="detail-panel">
+  <button class="detail-close" onclick="closeDetail()">✕</button>
+  <div id="detail-content"></div>
+</div>
+
+<script>
+const stepData = {
+  s0: {
+    type: 'Interview / Setup', color: '#7c3aed',
+    title: 'Portfolio Interview',
+    script: '— Claude conducts the interview —',
+    output: 'User-confirmed CLI args for Step 1',
+    description: 'Structured Q&A to establish portfolio distribution before any data is generated.',
+    questions: ['Product mix (Personal / Home / Auto / Business)', 'Employment split (Salaried / SEP / Business Owner)', 'City tier targets (Tier 1 / 2 / 3)', 'Loan amount ranges per product', 'Total record count'],
+    cliArgs: '--product-weights "40,25,20,15"\n--emp-weights "50,30,20"\n--tier-weights "57,32,11"\n--loan-amt-personal "50000,1500000"\n--records 3000'
+  },
+  s1: {
+    type: 'Data Generation', color: '#2563eb',
+    title: 'Generate Loan Applications',
+    script: 'generate_loan_applications.py',
+    output: 'loan_applications.xlsx',
+    description: '3,000 synthetic Indian loan application records with realistic distributions.',
+    fields: ['App_ID', 'Age', 'Gender', 'City / City_Tier / State', 'Employment_Type', 'Employer_Category', 'Monthly_Income', 'Existing_EMI', 'CIBIL_Score', 'Loan_Product', 'Loan_Amount_Requested', 'Loan_Tenure_Months', 'Lead_Source', 'FOIR'],
+    cliArgs: '--records 3000\n--output "C:/path/to/folder"'
+  },
+  s2a: {
+    type: 'Config / Review', color: '#d97706',
+    title: 'Build Loan Pricing Table',
+    script: 'build_loan_pricing.py',
+    output: 'Loan Pricing.xlsx (2 sheets)',
+    description: '810 rate combinations. Base 9% + additive spreads across 5 risk dimensions.',
+    dimensions: ['CIBIL Band: 751-775 · 776-800 · 801-825 · 826-850 · 851-900', 'Employment: Govt · PSU · MNC · Private · SEP · Business Owner', 'Loan Amount: Up to 3L · 3L-7L · 7L-15L', 'Tenure: 12-24M · 25-36M · 37-60M', 'Age Group: 25-35 · 36-45 · 46-50'],
+    cliArgs: '--output "C:/path/to/folder"'
+  },
+  s2b: {
+    type: 'Config / Review', color: '#d97706',
+    title: 'Build Eligibility Rules',
+    script: 'build_loan_eligibility_rules.py',
+    output: 'Loan Eligibility Rules.xlsx (2 sheets)',
+    description: '8 configurable BRE rules. Edit amber Value column before running Step 3.',
+    rules: ['R001 — Loan Product (IN list)', 'R002 — CIBIL Score minimum', 'R003 — FOIR cap (Salaried)', 'R004 — FOIR cap (Non-Salaried)', 'R005 — Max Loan Amount', 'R006 — City Tier (IN list)', 'R007 — Min Age', 'R008 — Max Age'],
+    cliArgs: '--output "C:/path/to/folder"'
+  },
+  s3: {
+    type: 'Data Generation', color: '#2563eb',
+    title: 'Generate Approved Loans',
+    script: 'generate_approved_loans.py',
+    output: 'approved_loans.xlsx',
+    description: 'Applies BRE rules + looks up rates from pricing table. ~5% approval rate.',
+    enriched: ['Loan_ID', 'Approval_Date', 'Disbursement_Date', 'Sanctioned_Amount (90-100% of requested)', 'Interest_Rate (from Loan Pricing.xlsx)', 'EMI (reducing balance)', 'Processing_Fee (1-2%)'],
+    cliArgs: '--input loan_applications.xlsx\n--pricing "Loan Pricing.xlsx"\n--rules "Loan Eligibility Rules.xlsx"\n--output "C:/path/to/folder"'
+  },
+  s3b: {
+    type: 'Config / Review', color: '#d97706',
+    title: 'Build Repayment Assumptions',
+    script: 'build_repayment_assumptions.py',
+    output: 'Repayment Assumptions.xlsx',
+    description: '6-section editable config. All amber cells must be reviewed before Step 4.',
+    sections: ['§1 Payment Profile Distribution — must sum to 100%', '§2 DPD: Occasional Delay — DPD days + probability', '§3 DPD: Chronic Delay — DPD days + probability', '§4 Partial Prepayment parameters', '§5 Full Prepayment / early closure', '§6 Write-offs & Penal Rules'],
+    cliArgs: '--output "C:/path/to/folder"'
+  },
+  s4: {
+    type: 'Data Generation', color: '#2563eb',
+    title: 'Generate Repayment Schedule',
+    script: 'generate_repayment_schedule.py',
+    output: 'loan_repayment_schedule.xlsx',
+    description: 'EMI-level simulation applying 3 BRE rule sets and 5 payment profiles.',
+    profiles: ['Pristine 45% — always on time', 'Occasional Delay 25% — mostly on time', 'Chronic Delay 10% — frequently late', 'Partial Prepayment 10% — one mid-tenure prepayment', 'Full Prepayment 10% — early full closure'],
+    cliArgs: '--input approved_loans.xlsx\n--assumptions "Repayment Assumptions.xlsx"\n--output "C:/path/to/folder"'
+  },
+  s5: {
+    type: 'Analytics Dashboard', color: '#059669',
+    title: 'Repayment Dashboard',
+    script: 'generate_repayment_dashboard.py',
+    output: 'repayment_dashboard.xlsx',
+    description: 'Formula-driven analytics dashboard built from the repayment schedule.',
+    sections: ['§1 Executive KPIs', '§2 Payment Status Distribution', '§3 DPD Bucket Analysis', '§4 Loan Status Summary', '§5 Prepayment Analysis'],
+    cliArgs: '--input loan_repayment_schedule.xlsx\n--output "C:/path/to/folder"'
+  },
+  s6: {
+    type: 'Analytics Dashboard', color: '#059669',
+    title: 'Lifecycle Dashboard',
+    script: 'generate_lifecycle_dashboard.py',
+    output: 'loan_lifecycle_dashboard.xlsx (4 sheets)',
+    description: 'Cross-file unified view spanning applications → approvals → repayments.',
+    sections: ['§1 Lifecycle KPIs (approval rate, collection efficiency)', '§2 Applications by Lead Source', '§3 Approved by Employment Type', '§4 Approved by City Tier', '§5 CIBIL Band Analysis', '§6 Repayment by Payment Status'],
+    cliArgs: '--apps loan_applications.xlsx\n--loans approved_loans.xlsx\n--sched loan_repayment_schedule.xlsx\n--output "C:/path/to/folder"'
+  },
+  s7: {
+    type: 'Final Output', color: '#b45309',
+    title: 'Comprehensive Portfolio Dashboard',
+    script: 'generate_dashboard.py',
+    output: 'loan_portfolio_dashboard.xlsx (6 sheets)',
+    description: 'The complete pipeline consolidated into one workbook — portfolio analysis + all configuration.',
+    sheets: ['📋 Data — 1,000 synthetic portfolio records', '📊 Dashboard — 6 sections + Actual vs Target KPIs (RAG)', '🔧 Portfolio Setup — Step 0 interview answers', '💰 Pricing Summary — spread logic + rate pivot', '✅ Eligibility Rules — R001-R008 as configured', '📅 Repayment Config — all 6 assumption sections'],
+    cliArgs: '--pricing "Loan Pricing.xlsx"\n--rules "Loan Eligibility Rules.xlsx"\n--assumptions "Repayment Assumptions.xlsx"\n--records 3000\n--product-weights "40,25,20,15"\n--emp-weights "50,30,20"\n--tgt-npa-rate 0.02\n--tgt-total-outstanding 79000000'
+  }
+};
+
+let selectedStep = null;
+let visibleTypes = new Set(['interview','datagen','config','dashboard','final']);
+let showStops = true;
+
+function selectStep(id) {
+  if (selectedStep) {
+    document.querySelector(`[data-id="${selectedStep}"]`).classList.remove('selected');
+  }
+  selectedStep = id;
+  document.querySelector(`[data-id="${id}"]`).classList.add('selected');
+  renderDetail(id);
+  document.getElementById('detail-panel').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('open');
+  if (selectedStep) {
+    document.querySelector(`[data-id="${selectedStep}"]`).classList.remove('selected');
+    selectedStep = null;
+  }
+}
+
+function renderDetail(id) {
+  const d = stepData[id];
+  let html = `
+    <div class="detail-type-badge" style="background:${d.color};color:#fff">${d.type}</div>
+    <div class="detail-title">${d.title}</div>
+    <p style="font-size:12px;color:#94a3b8;line-height:1.6;margin-bottom:4px">${d.description}</p>
+  `;
+  if (d.output) html += `<div style="margin-top:8px"><span class="detail-tag" style="color:#e2e8f0">→ ${d.output}</span></div>`;
+
+  if (d.questions) {
+    html += `<div class="detail-section"><div class="detail-section-label">Interview Questions</div>`;
+    d.questions.forEach(q => html += `<div class="detail-tag">${q}</div>`);
+    html += '</div>';
+  }
+  if (d.fields) {
+    html += `<div class="detail-section"><div class="detail-section-label">Output Fields</div>`;
+    d.fields.forEach(f => html += `<div class="detail-tag">${f}</div>`);
+    html += '</div>';
+  }
+  if (d.dimensions) {
+    html += `<div class="detail-section"><div class="detail-section-label">Pricing Dimensions</div>`;
+    d.dimensions.forEach(r => html += `<div style="font-size:11px;color:#94a3b8;padding:3px 0;border-bottom:1px solid #1e2030">${r}</div>`);
+    html += '</div>';
+  }
+  if (d.rules) {
+    html += `<div class="detail-section"><div class="detail-section-label">BRE Rules</div>`;
+    d.rules.forEach(r => html += `<div class="detail-tag">${r}</div>`);
+    html += '</div>';
+  }
+  if (d.enriched) {
+    html += `<div class="detail-section"><div class="detail-section-label">Enriched Fields Added</div>`;
+    d.enriched.forEach(f => html += `<div class="detail-tag">${f}</div>`);
+    html += '</div>';
+  }
+  if (d.sections) {
+    html += `<div class="detail-section"><div class="detail-section-label">Dashboard Sections</div>`;
+    d.sections.forEach(s => html += `<div style="font-size:11px;color:#94a3b8;padding:3px 0">${s}</div>`);
+    html += '</div>';
+  }
+  if (d.profiles) {
+    html += `<div class="detail-section"><div class="detail-section-label">Payment Profiles</div>`;
+    d.profiles.forEach(p => html += `<div style="font-size:11px;color:#94a3b8;padding:3px 0">${p}</div>`);
+    html += '</div>';
+  }
+  if (d.sheets) {
+    html += `<div class="detail-section"><div class="detail-section-label">Output Sheets</div>`;
+    d.sheets.forEach(s => html += `<div style="font-size:12px;color:#e2e8f0;padding:4px 0;border-bottom:1px solid #1e2030">${s}</div>`);
+    html += '</div>';
+  }
+  if (d.cliArgs) {
+    html += `<div class="detail-section"><div class="detail-section-label">CLI Args</div>
+      <div class="detail-value">${d.cliArgs}</div></div>`;
+  }
+  document.getElementById('detail-content').innerHTML = html;
+}
+
+function toggleExpand(id) {
+  const desc = document.getElementById('desc-' + id);
+  desc.classList.toggle('collapsed');
+}
+
+function filterType(type, btn) {
+  btn.classList.toggle('active');
+  if (visibleTypes.has(type)) visibleTypes.delete(type);
+  else visibleTypes.add(type);
+  applyFilters();
+}
+
+function filterStops(btn) {
+  btn.classList.toggle('active');
+  showStops = !showStops;
+  applyFilters();
+}
+
+function showAll(btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.legend-item').forEach(b => b.classList.add('active'));
+  visibleTypes = new Set(['interview','datagen','config','dashboard','final']);
+  showStops = true;
+  applyFilters();
+}
+
+function showOnly(types, btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  visibleTypes = new Set(types);
+  showStops = false;
+  applyFilters();
+}
+
+function showStopsOnly(btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  visibleTypes = new Set();
+  showStops = true;
+  applyFilters();
+}
+
+function applyFilters() {
+  document.querySelectorAll('.step-card').forEach(card => {
+    const type = [...card.classList].find(c => c.startsWith('type-'))?.replace('type-','');
+    card.classList.toggle('hidden', !visibleTypes.has(type));
+  });
+  document.querySelectorAll('.connector-stop').forEach(stop => {
+    stop.classList.toggle('hidden', !showStops);
+  });
+  // Hide plain connectors when the surrounding cards are hidden
+  document.querySelectorAll('.connector').forEach(conn => {
+    const prev = conn.previousElementSibling;
+    const next = conn.nextElementSibling;
+    const prevHidden = prev && prev.classList.contains('hidden');
+    const nextHidden = next && next.classList.contains('hidden');
+    conn.style.display = (prevHidden || nextHidden) ? 'none' : 'flex';
+  });
+}
+</script>
+</body>
+</html>
