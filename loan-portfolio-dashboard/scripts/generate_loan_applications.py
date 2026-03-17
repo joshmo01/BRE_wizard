@@ -17,9 +17,25 @@ from openpyxl.utils import get_column_letter
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser()
-parser.add_argument("--records", type=int, default=3000,
+parser.add_argument("--records",        type=int, default=3000,
                     help="Number of application records (default: 3000)")
-parser.add_argument("--output", default=".", help="Output directory")
+parser.add_argument("--output",         default=".",
+                    help="Output directory")
+parser.add_argument("--product-weights", default="40,25,20,15",
+                    help="Comma-separated weights: Personal,Home,Auto,Business (default: 40,25,20,15)")
+parser.add_argument("--emp-weights",     default="50,30,20",
+                    help="Comma-separated weights: Salaried,Self-Employed,Business Owner (default: 50,30,20)")
+parser.add_argument("--tier-weights",    default="",
+                    help="Comma-separated %% targets: Tier1,Tier2,Tier3 e.g. 30,40,30 "
+                         "(overrides per-city weights; must sum to 100)")
+parser.add_argument("--loan-amt-personal", default="50000,1500000",
+                    help="Min,Max loan amount for Personal loans in Rs (default: 50000,1500000)")
+parser.add_argument("--loan-amt-home",     default="1000000,10000000",
+                    help="Min,Max for Home loans (default: 1000000,10000000)")
+parser.add_argument("--loan-amt-auto",     default="300000,2000000",
+                    help="Min,Max for Auto loans (default: 300000,2000000)")
+parser.add_argument("--loan-amt-business", default="500000,5000000",
+                    help="Min,Max for Business loans (default: 500000,5000000)")
 args = parser.parse_args()
 
 NUM     = args.records
@@ -28,6 +44,29 @@ os.makedirs(OUT_DIR, exist_ok=True)
 
 np.random.seed(42)
 random.seed(42)
+
+def _parse_weights(s):
+    return [float(x.strip()) for x in s.split(",")]
+
+def _parse_range(s):
+    parts = [int(x.strip()) for x in s.split(",")]
+    return parts[0], parts[1]
+
+PRODUCT_WEIGHTS = _parse_weights(args.product_weights)
+EMP_WEIGHTS     = _parse_weights(args.emp_weights)
+AMT_PERSONAL    = _parse_range(args.loan_amt_personal)
+AMT_HOME        = _parse_range(args.loan_amt_home)
+AMT_AUTO        = _parse_range(args.loan_amt_auto)
+AMT_BUSINESS    = _parse_range(args.loan_amt_business)
+
+# Print active distribution so it's visible in run output
+print(f"  Portfolio distribution applied:")
+print(f"    Products   : Personal {PRODUCT_WEIGHTS[0]:.0f}%  Home {PRODUCT_WEIGHTS[1]:.0f}%  "
+      f"Auto {PRODUCT_WEIGHTS[2]:.0f}%  Business {PRODUCT_WEIGHTS[3]:.0f}%")
+print(f"    Employment : Salaried {EMP_WEIGHTS[0]:.0f}%  SEP {EMP_WEIGHTS[1]:.0f}%  "
+      f"Business Owner {EMP_WEIGHTS[2]:.0f}%")
+print(f"    Records    : {NUM:,}")
+print()
 
 # ── REFERENCE DATA ────────────────────────────────────────────────────────────
 CITY_DATA = [
@@ -67,7 +106,15 @@ CITY_DATA = [
     ("Dehradun",        "Tier 3", "Uttarakhand"),
     ("Amritsar",        "Tier 3", "Punjab"),
 ]
-CITY_WEIGHTS = [5] * 8 + [3] * 14 + [1] * 13   # Tier 1 gets more volume
+if args.tier_weights:
+    # Convert user-supplied tier % targets → per-city weights
+    tw = _parse_weights(args.tier_weights)   # [T1%, T2%, T3%]
+    w1 = tw[0] / 8;  w2 = tw[1] / 14;  w3 = tw[2] / 13
+    CITY_WEIGHTS = [w1] * 8 + [w2] * 14 + [w3] * 13
+    print(f"    City Tiers : Tier 1 {tw[0]:.0f}%  Tier 2 {tw[1]:.0f}%  Tier 3 {tw[2]:.0f}%")
+    print()
+else:
+    CITY_WEIGHTS = [5] * 8 + [3] * 14 + [1] * 13   # Tier 1 gets more volume
 
 PRODUCTS      = ["Personal", "Home", "Auto", "Business"]
 EMP_TYPES     = ["Salaried", "Self-Employed", "Business Owner"]
@@ -93,7 +140,7 @@ for i in range(1, NUM + 1):
     gender = random.choices(["Male", "Female"], weights=[65, 35])[0]
     city, city_tier, state = random.choices(CITY_DATA, weights=CITY_WEIGHTS)[0]
 
-    emp_type = random.choices(EMP_TYPES, weights=[50, 30, 20])[0]
+    emp_type = random.choices(EMP_TYPES, weights=EMP_WEIGHTS)[0]
     if emp_type == "Salaried":
         employer_cat   = random.choice(EMPLOYER_CATS)
         monthly_income = int(np.random.randint(25_000, 200_001))
@@ -107,15 +154,15 @@ for i in range(1, NUM + 1):
     existing_emi = round(monthly_income * np.random.uniform(0, 0.40), 2)
     cibil        = int(np.random.randint(600, 901))
 
-    product = random.choices(PRODUCTS, weights=[40, 25, 20, 15])[0]
+    product = random.choices(PRODUCTS, weights=PRODUCT_WEIGHTS)[0]
     if product == "Home":
-        loan_amt = int(np.random.randint(1_000_000, 10_000_001))
+        loan_amt = int(np.random.randint(AMT_HOME[0],     AMT_HOME[1]     + 1))
     elif product == "Business":
-        loan_amt = int(np.random.randint(500_000, 5_000_001))
+        loan_amt = int(np.random.randint(AMT_BUSINESS[0], AMT_BUSINESS[1] + 1))
     elif product == "Auto":
-        loan_amt = int(np.random.randint(300_000, 2_000_001))
+        loan_amt = int(np.random.randint(AMT_AUTO[0],     AMT_AUTO[1]     + 1))
     else:
-        loan_amt = int(np.random.randint(50_000, 1_500_001))
+        loan_amt = int(np.random.randint(AMT_PERSONAL[0], AMT_PERSONAL[1] + 1))
 
     tenure      = random.choice(TENURE_MAP[product])
     lead_source = random.choices(LEAD_SOURCES, weights=[35, 20, 25, 15, 5])[0]

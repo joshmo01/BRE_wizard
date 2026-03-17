@@ -1,19 +1,18 @@
 """
 Loan Repayment Schedule Generator
-Reads approved_loans.xlsx, generates monthly repayment schedules applying BRE rules:
-  - Rule Set 2: Penal Interest (2% p.a. daily) & DPD Bucket Classification
-  - Rule Set 3: Default Penalty (Rs 1,000 flat if DPD > 90)
-  - Rule Set 4: Prepayment Charges (2% of OS principal)
+Reads approved_loans.xlsx and Repayment Assumptions.xlsx, generates monthly
+repayment schedules applying configurable BRE rules and payment profiles.
 
-Payment scenarios per loan:
-  1. Regular (on time)
-  2. Delayed payments (DPD buckets)
-  3. Partial prepayment
-  4. Full prepayment
+All simulation parameters (profile weights, DPD distributions, prepayment
+parameters, penal rates, write-off thresholds) are loaded from
+Repayment Assumptions.xlsx (built by build_repayment_assumptions.py).
+Falls back to built-in defaults if the file is missing.
 
 Usage: python generate_repayment_schedule.py
-       python generate_repayment_schedule.py --input "path/to/approved_loans.xlsx"
-                                              --output "path/to/output"
+       python generate_repayment_schedule.py
+           --input       "path/to/approved_loans.xlsx"
+           --assumptions "path/to/Repayment Assumptions.xlsx"
+           --output      "path/to/output"
 """
 
 import argparse
@@ -29,8 +28,9 @@ from openpyxl.utils import get_column_letter
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser()
-parser.add_argument("--input",  default=r"C:\Users\joshm\OneDrive\Documents\BRE\approved_loans.xlsx")
-parser.add_argument("--output", default=r"C:\Users\joshm\OneDrive\Documents\BRE")
+parser.add_argument("--input",       default=r"C:\Users\joshm\OneDrive\Documents\BRE\approved_loans.xlsx")
+parser.add_argument("--assumptions", default=r"C:\Users\joshm\OneDrive\Documents\BRE\Repayment Assumptions.xlsx")
+parser.add_argument("--output",      default=r"C:\Users\joshm\OneDrive\Documents\BRE")
 args = parser.parse_args()
 
 OUT_DIR = args.output
@@ -42,30 +42,208 @@ np.random.seed(42)
 df = pd.read_excel(args.input, sheet_name="Approved_Loans")
 print(f"Loaded {len(df):,} approved loans")
 
-# ── 2. PAYMENT PROFILES ───────────────────────────────────────────────────────
-# Each profile defines DPD probabilities per EMI
+# ── 2. LOAD REPAYMENT ASSUMPTIONS ─────────────────────────────────────────────
+# Built-in defaults
+_D = {
+    # Section 1 — profile weights
+    "profile_weights": {"Pristine": 45, "Occasional Delay": 25, "Chronic Delay": 10,
+                        "Partial Prepay": 10, "Full Prepay": 10},
+    # Section 2 — occasional delay DPD
+    "occ_dpd":   [0, 15, 45],
+    "occ_probs": [70, 20, 10],
+    # Section 3 — chronic delay DPD
+    "chr_dpd":   [0, 20, 45, 75, 95],
+    "chr_probs": [30, 30, 20, 15, 5],
+    # Section 4 — partial prepayment
+    "partial_min_pct":   10,   # % of outstanding
+    "partial_max_pct":   30,
+    "partial_min_month":  3,
+    "partial_charge_pct": 2,   # % of prepaid amount
+    # Section 5 — full prepayment
+    "full_min_month":   3,
+    "full_max_month":  36,
+    "full_charge_pct":  2,     # % of outstanding
+    # Section 6 — penal rules
+    "npa_dpd_threshold":  90,
+    "default_penalty":  1000,
+    "penal_rate_pa":       2,  # % p.a.
+    "writeoff_dpd":      180,
+    "writeoff_pct":       30,  # % of outstanding
+}
+
+A = dict(_D)  # will be overridden from file
+
+if os.path.exists(args.assumptions):
+    try:
+        xl = pd.read_excel(args.assumptions, sheet_name="Repayment Assumptions", header=None)
+        rows = xl.values.tolist()
+
+        def _find_section(keyword):
+            """Return row index of header row after the section title containing keyword."""
+            for i, row in enumerate(rows):
+                if any(isinstance(v, str) and keyword.lower() in str(v).lower() for v in row):
+                    return i
+            return None
+
+        import math as _math
+
+        def _is_real(v):
+            """True if v is a non-NaN, non-None value."""
+            if v is None: return False
+            try:
+                return not _math.isnan(float(v))
+            except (TypeError, ValueError):
+                return isinstance(v, str) and v.strip() != ""
+
+        _SKIP = {"", "nan", "none", "total", "parameter", "profile",
+                 "dpd scenario", "label", "description", "unit"}
+
+        def _valid_label(v):
+            return _is_real(v) and str(v).strip().lower() not in _SKIP
+
+        def _to_f(v):
+            try:
+                fv = float(v)
+                return None if _math.isnan(fv) else fv
+            except: return None
+
+        def _read_table(start_row, col_label=0, col_val=1, max_rows=10):
+            """Read label→float value pairs, skipping blank/header/total rows."""
+            result = {}
+            for r in rows[start_row+1 : start_row+1+max_rows]:
+                if max(col_label, col_val) >= len(r): continue
+                if not _valid_label(r[col_label]): continue
+                fv = _to_f(r[col_val])
+                if fv is not None:
+                    result[str(r[col_label]).strip()] = fv
+            return result
+
+        def _read_dpd_table(start_row, max_rows):
+            """Read (days, prob) pairs from cols 1 and 2 of a DPD section."""
+            day_list, prob_list = [], []
+            for r in rows[start_row+1 : start_row+1+max_rows]:
+                if len(r) < 3: continue
+                if not _valid_label(r[0]): continue
+                d = _to_f(r[1]);  p = _to_f(r[2])
+                if d is not None and p is not None:
+                    day_list.append(int(d));  prob_list.append(p)
+            return day_list, prob_list
+
+        # Section 1 — profile weights
+        s1 = _find_section("SECTION 1")
+        if s1 is not None:
+            t = _read_table(s1 + 1, col_label=0, col_val=1, max_rows=6)
+            for k, v in t.items():
+                if "Pristine" in k:     A["profile_weights"]["Pristine"]         = v
+                elif "Occasional" in k: A["profile_weights"]["Occasional Delay"] = v
+                elif "Chronic" in k:    A["profile_weights"]["Chronic Delay"]    = v
+                elif "Partial" in k:    A["profile_weights"]["Partial Prepay"]   = v
+                elif "Full" in k:       A["profile_weights"]["Full Prepay"]      = v
+
+        # Section 2 — occasional delay
+        s2 = _find_section("SECTION 2")
+        if s2 is not None:
+            days_list, prob_list = _read_dpd_table(s2 + 1, max_rows=5)
+            if days_list and prob_list and len(days_list) == len(prob_list):
+                A["occ_dpd"]   = days_list
+                A["occ_probs"] = prob_list
+
+        # Section 3 — chronic delay
+        s3 = _find_section("SECTION 3")
+        if s3 is not None:
+            days_list, prob_list = _read_dpd_table(s3 + 1, max_rows=7)
+            if days_list and prob_list and len(days_list) == len(prob_list):
+                A["chr_dpd"]   = days_list
+                A["chr_probs"] = prob_list
+
+        # Section 4 — partial prepayment
+        s4 = _find_section("SECTION 4")
+        if s4 is not None:
+            t = _read_table(s4 + 1, col_label=0, col_val=1, max_rows=6)
+            for k, v in t.items():
+                k_l = k.lower()
+                if "min partial" in k_l or "min %" in k_l:    A["partial_min_pct"]   = v
+                elif "max partial" in k_l or "max %" in k_l:  A["partial_max_pct"]   = v
+                elif "earliest" in k_l:                        A["partial_min_month"] = int(v)
+                elif "charge" in k_l:                          A["partial_charge_pct"]= v
+
+        # Section 5 — full prepayment
+        s5 = _find_section("SECTION 5")
+        if s5 is not None:
+            t = _read_table(s5 + 1, col_label=0, col_val=1, max_rows=5)
+            for k, v in t.items():
+                k_l = k.lower()
+                if "earliest" in k_l:    A["full_min_month"]  = int(v)
+                elif "latest" in k_l:    A["full_max_month"]  = int(v)
+                elif "charge" in k_l:    A["full_charge_pct"] = v
+
+        # Section 6 — penal rules
+        s6 = _find_section("SECTION 6")
+        if s6 is not None:
+            t = _read_table(s6 + 1, col_label=0, col_val=1, max_rows=7)
+            for k, v in t.items():
+                k_l = k.lower()
+                if "npa classification" in k_l:  A["npa_dpd_threshold"] = int(v)
+                elif "default penalty" in k_l:   A["default_penalty"]   = float(v)
+                elif "penal interest" in k_l:    A["penal_rate_pa"]     = v
+                elif "write-off dpd" in k_l:     A["writeoff_dpd"]      = int(v)
+                elif "write-off %" in k_l:        A["writeoff_pct"]      = v
+
+        print(f"Repayment assumptions loaded from {args.assumptions}")
+    except Exception as e:
+        print(f"WARNING: Could not read assumptions ({e}) — using built-in defaults")
+else:
+    print(f"WARNING: Assumptions file not found at {args.assumptions} — using built-in defaults")
+
+# Print active assumptions
+pw = A["profile_weights"]
+print(f"\n  Active assumptions:")
+print(f"    Profiles  : Pristine {pw['Pristine']}%  OccDelay {pw['Occasional Delay']}%  "
+      f"Chronic {pw['Chronic Delay']}%  PartialPrepay {pw['Partial Prepay']}%  FullPrepay {pw['Full Prepay']}%")
+print(f"    NPA DPD   : >{A['npa_dpd_threshold']} days  |  Penal Rate: {A['penal_rate_pa']}% p.a.")
+print(f"    Default Penalty: Rs {A['default_penalty']:,.0f}  |  "
+      f"Write-off at DPD>{A['writeoff_dpd']} ({A['writeoff_pct']}% of OS)")
+print(f"    Partial Prepay: {A['partial_min_pct']}–{A['partial_max_pct']}% of OS  "
+      f"from month {A['partial_min_month']}")
+print(f"    Full Prepay   : month {A['full_min_month']}–{A['full_max_month']}  "
+      f"charge {A['full_charge_pct']}%")
+print()
+
+# ── 3. BUILD PROFILES FROM ASSUMPTIONS ────────────────────────────────────────
+_occ_probs_norm = [p / sum(A["occ_probs"]) for p in A["occ_probs"]]
+_chr_probs_norm = [p / sum(A["chr_probs"]) for p in A["chr_probs"]]
+
 PROFILES = {
-    "Pristine":         {"weight": 45, "dpd_choices": [0],               "dpd_probs": [1.0]},
-    "Occasional Delay": {"weight": 25, "dpd_choices": [0, 15, 45],        "dpd_probs": [0.70, 0.20, 0.10]},
-    "Chronic Delay":    {"weight": 10, "dpd_choices": [0, 20, 45, 75, 95],"dpd_probs": [0.30, 0.30, 0.20, 0.15, 0.05]},
-    "Partial Prepay":   {"weight": 10, "dpd_choices": [0],                "dpd_probs": [1.0], "has_partial_prepay": True},
-    "Full Prepay":      {"weight": 10, "dpd_choices": [0],                "dpd_probs": [1.0], "has_full_prepay": True},
+    "Pristine":         {"weight": pw["Pristine"],
+                         "dpd_choices": [0], "dpd_probs": [1.0]},
+    "Occasional Delay": {"weight": pw["Occasional Delay"],
+                         "dpd_choices": A["occ_dpd"], "dpd_probs": _occ_probs_norm},
+    "Chronic Delay":    {"weight": pw["Chronic Delay"],
+                         "dpd_choices": A["chr_dpd"], "dpd_probs": _chr_probs_norm},
+    "Partial Prepay":   {"weight": pw["Partial Prepay"],
+                         "dpd_choices": [0], "dpd_probs": [1.0], "has_partial_prepay": True},
+    "Full Prepay":      {"weight": pw["Full Prepay"],
+                         "dpd_choices": [0], "dpd_probs": [1.0], "has_full_prepay": True},
 }
 
 profile_names   = list(PROFILES.keys())
 profile_weights = [PROFILES[p]["weight"] for p in profile_names]
 loan_profiles   = random.choices(profile_names, weights=profile_weights, k=len(df))
 
-# ── 3. BRE RULE FUNCTIONS ─────────────────────────────────────────────────────
+# ── 4. BRE RULE FUNCTIONS (parameterised from assumptions) ────────────────────
+_PENAL_RATE   = A["penal_rate_pa"] / 100
+_NPA_THRESH   = A["npa_dpd_threshold"]
+_DEF_PENALTY  = A["default_penalty"]
+_FULL_CHG_PCT = A["full_charge_pct"] / 100
+_PART_CHG_PCT = A["partial_charge_pct"] / 100
 
 def bre_penal_interest(dpd, outstanding_principal):
-    """RS2: 2% p.a. daily penal interest on full OS principal when DPD > 0."""
+    """Penal interest at configured rate (p.a.) applied daily on OS principal when DPD > 0."""
     if dpd > 0:
-        return round(outstanding_principal * (0.02 / 365) * dpd, 2)
+        return round(outstanding_principal * (_PENAL_RATE / 365) * dpd, 2)
     return 0.0
 
 def bre_dpd_bucket(dpd):
-    """RS2: Classify into DPD bucket."""
     if dpd == 0:    return "Current"
     elif dpd <= 30: return "DPD 1-30"
     elif dpd <= 60: return "DPD 31-60"
@@ -73,16 +251,15 @@ def bre_dpd_bucket(dpd):
     else:           return "DPD 90+"
 
 def bre_default_penalty(dpd):
-    """RS3: Rs 1,000 flat fee if DPD > 90."""
-    return 1000 if dpd > 90 else 0
+    return _DEF_PENALTY if dpd > _NPA_THRESH else 0
 
 def bre_loan_status(dpd):
-    """RS3: NPA if DPD > 90, else STANDARD."""
-    return "NPA" if dpd > 90 else "STANDARD"
+    return "NPA" if dpd > _NPA_THRESH else "STANDARD"
 
 def bre_prepayment_charge(prepayment_amount, outstanding_principal, is_full):
-    """RS4: 2% of OS principal (full) or prepaid amount (partial)."""
-    return round((outstanding_principal if is_full else prepayment_amount) * 0.02, 2)
+    rate = _FULL_CHG_PCT if is_full else _PART_CHG_PCT
+    base = outstanding_principal if is_full else prepayment_amount
+    return round(base * rate, 2)
 
 # ── 4. GENERATE SCHEDULE ──────────────────────────────────────────────────────
 schedule_rows = []
@@ -100,10 +277,15 @@ for idx, loan in df.iterrows():
     monthly_rate   = annual_rate / 12
     disbursement_dt = datetime.strptime(str(loan["Disbursement_Date"])[:10], "%Y-%m-%d")
 
-    # Assign prepayment month (not in first 2 or last 1 months)
-    safe_range          = range(3, max(4, tenure))
-    partial_prepay_month = random.choice(list(safe_range)) if profile.get("has_partial_prepay") else None
-    full_prepay_month    = random.choice(list(safe_range)) if profile.get("has_full_prepay")    else None
+    # Assign prepayment month from assumptions
+    p_min  = min(A["partial_min_month"], max(3, tenure - 1))
+    p_safe = list(range(p_min, max(p_min + 1, tenure)))
+    partial_prepay_month = random.choice(p_safe) if profile.get("has_partial_prepay") else None
+
+    f_min  = min(A["full_min_month"], max(3, tenure - 1))
+    f_max  = min(A["full_max_month"], max(f_min + 1, tenure - 1))
+    f_safe = list(range(f_min, max(f_min + 1, f_max + 1)))
+    full_prepay_month    = random.choice(f_safe) if profile.get("has_full_prepay") else None
 
     opening_balance = principal
 
@@ -141,8 +323,9 @@ for idx, loan in df.iterrows():
             is_full_prepay    = True
 
         elif emi_num == partial_prepay_month:
-            # Partial prepayment: 10–30% of current outstanding
-            partial_pct       = np.random.uniform(0.10, 0.30)
+            # Partial prepayment: configured % range of current outstanding
+            partial_pct       = np.random.uniform(A["partial_min_pct"] / 100,
+                                                   A["partial_max_pct"] / 100)
             prepayment_amount = round(opening_balance * partial_pct, 2)
             prepayment_charge = bre_prepayment_charge(prepayment_amount, 0, is_full=False)
             prepayment_type   = "PARTIAL_PREPAYMENT"

@@ -9,26 +9,83 @@ Generates a complete, formula-driven Excel loan portfolio dashboard with synthet
 
 ## Output
 
-A single file: `loan_portfolio_dashboard.xlsx` with two sheets:
+A single file: `loan_portfolio_dashboard.xlsx` with **6 sheets** — generated as the **final step** after all pipeline scripts have run:
 
 | Sheet | Contents |
 |-------|----------|
 | **Data** | 1,000 synthetic loan records with realistic distributions |
-| **Dashboard** | 6 formula-driven summary sections, no charts |
+| **Dashboard** | 6 formula-driven analytical sections + Executive KPIs with Actual vs Target RAG status |
+| **Portfolio Setup** | Initial assumptions from Step 0 interview (product mix, employment mix, city tiers, loan amount ranges, record count) |
+| **Pricing Summary** | Spread logic table + avg rate pivot by CIBIL band × Employment Type (from `Loan Pricing.xlsx`) |
+| **Eligibility Rules** | Full BRE rule table R001–R008 with values as configured (from `Loan Eligibility Rules.xlsx`) |
+| **Repayment Config** | All 6 sections of repayment assumptions — profiles, DPD distributions, prepayment & penal parameters (from `Repayment Assumptions.xlsx`) |
 
 ## How to Run
 
-Execute the bundled script from the current working directory:
+> **MANDATORY STOP — TARGET KPI INTERVIEW**
+> Before running this script, you MUST ask the user for their target values for each of the
+> 10 Executive KPIs. Do NOT run the script until the user has confirmed their targets.
+> See "Target KPI Interview" section below for the exact questions to ask.
+
+Once targets are confirmed, pass them as CLI args:
 
 ```bash
-python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/generate_dashboard.py"
+python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/generate_dashboard.py" \
+  --output "C:/path/to/output" \
+  --tgt-total-loans       1000 \
+  --tgt-total-disbursed   50000000 \
+  --tgt-total-outstanding 30000000 \
+  --tgt-npa-count         50 \
+  --tgt-npa-rate          0.05 \
+  --tgt-delinquent-count  80 \
+  --tgt-portfolio-yield   0.10 \
+  --tgt-monthly-profit    250000 \
+  --tgt-avg-loan-size     30000 \
+  --tgt-active-loans      870
 ```
 
-If the user wants to save the output to a specific folder, pass the path:
+Omit any `--tgt-*` arg to show "— No Target Set" for that KPI.
 
-```bash
-python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/generate_dashboard.py" --output "C:/path/to/output"
-```
+---
+
+## Target KPI Interview
+
+Ask the user the following before generating the dashboard. Present all questions at once:
+
+> I need your **target values** for the 10 Executive KPIs so the dashboard can show
+> Actual vs Target with RAG (green/red) status.
+>
+> Please provide targets for any or all of the following (skip any you don't have a target for):
+>
+> | # | KPI | Direction | Example |
+> |---|-----|-----------|---------|
+> | 1 | Total Loans (count) | Higher is better | e.g. 1000 |
+> | 2 | Total Disbursed (Rs) | Higher is better | e.g. 5,00,00,000 |
+> | 3 | Total Outstanding (Rs) | Higher is better | e.g. 3,00,00,000 |
+> | 4 | NPA Count | **Lower is better** | e.g. 50 |
+> | 5 | NPA Rate (%) | **Lower is better** | e.g. 5% |
+> | 6 | Delinquent Count | **Lower is better** | e.g. 80 |
+> | 7 | Portfolio Yield (%) | Higher is better | e.g. 10% |
+> | 8 | Total Monthly Profit (Rs) | Higher is better | e.g. 2,50,000 |
+> | 9 | Avg Loan Size (Rs) | Higher is better | e.g. 30,000 |
+> | 10 | Active Loans (count) | Higher is better | e.g. 870 |
+
+After collecting answers, show a confirmation table and wait for explicit user confirmation before running.
+
+### Mapping targets to CLI args
+
+| KPI | CLI Arg | Notes |
+|-----|---------|-------|
+| Total Loans | `--tgt-total-loans` | Integer count |
+| Total Disbursed | `--tgt-total-disbursed` | Rs amount |
+| Total Outstanding | `--tgt-total-outstanding` | Rs amount |
+| NPA Count | `--tgt-npa-count` | Integer count |
+| NPA Rate | `--tgt-npa-rate` | Decimal: 5% → 0.05 |
+| Delinquent Count | `--tgt-delinquent-count` | Integer count |
+| Portfolio Yield | `--tgt-portfolio-yield` | Decimal: 10% → 0.10 |
+| Total Monthly Profit | `--tgt-monthly-profit` | Rs amount |
+| Avg Loan Size | `--tgt-avg-loan-size` | Rs amount |
+| Active Loans | `--tgt-active-loans` | Integer count |
 
 ## Data Sheet Columns
 
@@ -121,8 +178,10 @@ Output file: `loan_applications.xlsx`
 ## Script 2b — Loan Pricing Table (`build_loan_pricing.py`)
 
 Generates a complete pricing table with all combinations of risk dimensions and suggested spreads.
-**Run this before generating approved loans. User should review/update the `Final Rate (%)` column
-before proceeding.** The approved loans generator reads rates directly from this file.
+
+> **MANDATORY PAUSE — DO NOT PROCEED PAST THIS STEP WITHOUT EXPLICIT USER CONFIRMATION.**
+> After running this script you MUST stop, tell the user the file is ready for review, and wait
+> for them to confirm before running any subsequent script. No exceptions.
 
 ```bash
 python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/build_loan_pricing.py"
@@ -158,9 +217,55 @@ Output file: `Loan Pricing.xlsx` (two sheets)
 
 Sheet 2 (`Rate Summary`) shows a pivot of avg rate by CIBIL band × Employment Category.
 
-> **Workflow:** After generating, open `Loan Pricing.xlsx`, review/adjust the `Final Rate (%)`
-> or individual spread columns to reflect your institution's pricing policy, then save and close
-> before running `generate_approved_loans.py`.
+> **Required message to user after running this script:**
+> "Loan Pricing table saved to `<output_path>/Loan Pricing.xlsx`. Please open it, review/adjust
+> the `Final Rate (%)` column (and spread columns if needed) to match your institution's pricing
+> policy, then save and close the file. Let me know when you're done and I'll continue."
+>
+> **Then STOP. Do not run Step 3 or any further script until the user explicitly confirms.**
+
+---
+
+## Script 2c — Loan Eligibility Rules (`build_loan_eligibility_rules.py`)
+
+Generates an editable Excel BRE configuration file with all loan eligibility rules.
+
+> **MANDATORY PAUSE — DO NOT PROCEED PAST THIS STEP WITHOUT EXPLICIT USER CONFIRMATION.**
+> After running this script you MUST stop, tell the user the file is ready for review, and wait
+> for them to confirm before running `generate_approved_loans.py`. No exceptions.
+
+```bash
+python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/build_loan_eligibility_rules.py"
+# custom output folder:
+python build_loan_eligibility_rules.py --output "C:/path/to/folder"
+```
+
+Output file: `Loan Eligibility Rules.xlsx` (two sheets)
+
+### Rules Defined (R001–R008)
+
+| Rule ID | Rule Name | Default Value | Applies To |
+|---------|-----------|---------------|------------|
+| R001 | Loan Product | Personal | All |
+| R002 | CIBIL Score Minimum | > 750 | All |
+| R003 | FOIR Cap – Salaried | < 20% | Salaried |
+| R004 | FOIR Cap – Non-Salaried | < 15% | Self-Employed, Business Owner |
+| R005 | Max Loan Amount (Rs) | < 15,00,000 | All |
+| R006 | City Tier | Tier 1, Tier 2, Tier 3 | All |
+| R007 | Minimum Age | >= 25 | All |
+| R008 | Maximum Age | <= 50 | All |
+
+### What the user can edit
+- **Value column** (amber) — change any threshold or list
+- **Enabled column** — set `No` to deactivate a rule entirely
+- Operator and Field columns must not be changed
+
+> **Required message to user after running this script:**
+> "Loan Eligibility Rules saved to `<output_path>/Loan Eligibility Rules.xlsx`. Please open it,
+> review/adjust the Value column (amber) for each rule to match your credit policy, set Enabled=No
+> for any rule you want to skip, then save and close. Let me know when you're done."
+>
+> **Then STOP. Do not run Step 3 until the user explicitly confirms.**
 
 ---
 
@@ -170,29 +275,33 @@ Reads `loan_applications.xlsx`, applies BRE eligibility rules, and enriches appr
 
 ```bash
 python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/generate_approved_loans.py"
-# custom input/pricing/output:
-python generate_approved_loans.py --input "C:/path/loan_applications.xlsx" \
+# custom input/pricing/rules/output:
+python generate_approved_loans.py --input   "C:/path/loan_applications.xlsx" \
                                    --pricing "C:/path/Loan Pricing.xlsx" \
-                                   --output "C:/path/to/folder"
+                                   --rules   "C:/path/Loan Eligibility Rules.xlsx" \
+                                   --output  "C:/path/to/folder"
 ```
 
-Output file: `approved_loans.xlsx` (~137 loans, ~4.6% approval rate from 3,000 applications)
+Output file: `approved_loans.xlsx`
 
-**Interest rates are looked up from `Loan Pricing.xlsx`** using the applicant's Employment Type,
-Employment Category, CIBIL band, Age group, Loan Amount band, and Tenure band.
-If no pricing file is found, falls back to a CIBIL-based formula (9.5%–14.5%).
+**Eligibility rules are loaded from `Loan Eligibility Rules.xlsx`** (R001–R008).
+If the file is missing, built-in defaults are used and a WARNING is printed.
 
-### BRE Eligibility Rules Applied
+**Interest rates are looked up from `Loan Pricing.xlsx`**.
+If missing, falls back to a CIBIL-based formula (9.5%–14.5%).
 
-| Rule | Condition |
-|------|-----------|
-| Loan Type | Personal Loan only |
-| CIBIL Score | > 750 |
-| FOIR (Salaried) | < 20% |
-| FOIR (Self-Employed / Business Owner) | < 15% |
-| Loan Amount | < Rs 15,00,000 |
-| City Tier | Tier 1 or Tier 2 only |
-| Age | 25–50 years |
+### BRE Rules Applied (read from Loan Eligibility Rules.xlsx)
+
+| Rule ID | Rule | Default |
+|---------|------|---------|
+| R001 | Loan Product | Personal only |
+| R002 | CIBIL Score | > 750 |
+| R003 | FOIR – Salaried | < 20% |
+| R004 | FOIR – Non-Salaried | < 15% |
+| R005 | Max Loan Amount | < Rs 15,00,000 |
+| R006 | City Tier | Tier 1, Tier 2, Tier 3 |
+| R007 | Min Age | >= 25 |
+| R008 | Max Age | <= 50 |
 
 ### Enriched Fields Added
 
@@ -291,16 +400,121 @@ Output file: `loan_lifecycle_dashboard.xlsx` (4 sheets: Dashboard + 3 data sheet
 
 ---
 
+## Step 0 — Portfolio Interview
+
+**Run this interview BEFORE generating any data.** Ask each question, wait for the answer, then
+present a confirmation summary table. Only proceed to Step 1 once the user confirms.
+
+### Questions to ask (one block, not one-by-one)
+
+> I'll need a few details to tailor the synthetic portfolio to your requirements:
+>
+> **1. Loan Products** — What % mix would you like?
+> (Defaults: Personal 40%, Home 25%, Auto 20%, Business 15%)
+>
+> **2. Customer Type (Employment)** — What % mix?
+> (Defaults: Salaried 50%, Self-Employed 30%, Business Owner 20%)
+>
+> **3. City Tier** — What % mix across Tier 1 / Tier 2 / Tier 3?
+> (Default: Tier 1 heavy — approx 57% / 32% / 11%)
+>
+> **4. Loan Amounts** — Any changes to the default ranges?
+> | Product  | Default Range (Rs)         |
+> |----------|----------------------------|
+> | Personal | 50,000 – 15,00,000         |
+> | Home     | 10,00,000 – 1,00,00,000    |
+> | Auto     | 3,00,000 – 20,00,000       |
+> | Business | 5,00,000 – 50,00,000       |
+>
+> **5. Record Count** — How many applications? (Default: 3,000)
+
+### Confirmation summary to show before proceeding
+
+After the user responds, display:
+
+```
+Portfolio Distribution Confirmed
+─────────────────────────────────────────────
+Products    : Personal X%  Home X%  Auto X%  Business X%
+Employment  : Salaried X%  SEP X%  Business Owner X%
+City Tiers  : Tier 1 X%  Tier 2 X%  Tier 3 X%
+Loan Ranges : Personal Rs A–B | Home Rs C–D | Auto Rs E–F | Business Rs G–H
+Records     : X,000 applications
+─────────────────────────────────────────────
+Shall I proceed with Step 1?
+```
+
+Wait for explicit user confirmation before running any script.
+
+### Mapping answers to CLI args
+
+```bash
+python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/generate_loan_applications.py" \
+  --records       5000 \
+  --product-weights "50,20,20,10" \
+  --emp-weights     "60,25,15" \
+  --tier-weights    "40,35,25" \
+  --loan-amt-personal "50000,1500000" \
+  --loan-amt-home     "1000000,10000000" \
+  --loan-amt-auto     "300000,2000000" \
+  --loan-amt-business "500000,5000000" \
+  --output "C:/Users/joshm/OneDrive/Documents/BRE"
+```
+
+- `--product-weights` : comma-separated weights for Personal, Home, Auto, Business (need not sum to 100 — used as relative weights)
+- `--emp-weights`     : Salaried, Self-Employed, Business Owner
+- `--tier-weights`    : must sum to 100 — converted to per-city probabilities inside the script
+- `--loan-amt-*`      : Min,Max in Rs for each product (no spaces around comma)
+- Omit any arg to keep its default
+
+---
+
 ## End-to-End Workflow
 
 ```
-Step 1  generate_loan_applications.py    →  loan_applications.xlsx      (3,000 applicants)
-Step 2  build_loan_pricing.py            →  Loan Pricing.xlsx           (810 rate combinations)
-          ↓ User reviews / adjusts Final Rate (%) in Excel, then saves and closes
-Step 3  generate_approved_loans.py       →  approved_loans.xlsx         (rates from pricing table)
-Step 4  generate_repayment_schedule.py   →  loan_repayment_schedule.xlsx
-Step 5  generate_repayment_dashboard.py  →  repayment_dashboard.xlsx    (repayment analysis)
-Step 6  generate_lifecycle_dashboard.py  →  loan_lifecycle_dashboard.xlsx (full lifecycle view)
+Step 0   [INTERVIEW]                        →  Confirm portfolio distribution (products, employment,
+                                               city tier, loan amounts, record count)
+         *** MANDATORY STOP — Wait for user to confirm before proceeding ***
+
+Step 1   generate_loan_applications.py     →  loan_applications.xlsx            (parameterised by interview)
+
+Step 2a  build_loan_pricing.py             →  Loan Pricing.xlsx                 (810 rate combinations)
+
+  *** MANDATORY STOP — PRICING ***
+  Tell the user the file path. Ask them to review/adjust Final Rate (%) and confirm.
+  DO NOT continue until the user explicitly says they are done reviewing.
+
+Step 2b  build_loan_eligibility_rules.py   →  Loan Eligibility Rules.xlsx       (R001–R008)
+
+  *** MANDATORY STOP — ELIGIBILITY RULES ***
+  Tell the user the file path. Ask them to review/adjust the Value column (amber)
+  and confirm. DO NOT run Step 3 until the user explicitly says they are done reviewing.
+
+Step 3   generate_approved_loans.py        →  approved_loans.xlsx               (rules + rates applied)
+
+Step 3b  build_repayment_assumptions.py    →  Repayment Assumptions.xlsx        (6-section config)
+
+  *** MANDATORY STOP — REPAYMENT ASSUMPTIONS ***
+  Tell the user the file path. Ask them to review/adjust all 6 sections (amber cells)
+  and confirm % columns sum to 100 where required.
+  DO NOT run Step 4 until the user explicitly says they are done reviewing.
+
+Step 4   generate_repayment_schedule.py    →  loan_repayment_schedule.xlsx      (assumptions applied)
+Step 5   generate_repayment_dashboard.py   →  repayment_dashboard.xlsx          (repayment analysis)
+Step 6   generate_lifecycle_dashboard.py   →  loan_lifecycle_dashboard.xlsx     (full lifecycle view)
+
+Step 7   generate_dashboard.py            →  loan_portfolio_dashboard.xlsx     (FINAL COMPREHENSIVE OUTPUT)
+
+  *** MANDATORY STOP — TARGET KPI INTERVIEW ***
+  Before running Step 7, ask the user for Target KPI values (see Target KPI Interview section).
+  DO NOT run the script until targets are confirmed.
+
+  Pass all pipeline config files + interview answers + targets as CLI args:
+    --pricing     "C:/path/Loan Pricing.xlsx"
+    --rules       "C:/path/Loan Eligibility Rules.xlsx"
+    --assumptions "C:/path/Repayment Assumptions.xlsx"
+    --records N --product-weights "..." --emp-weights "..." --tier-weights "..."
+    --tgt-npa-rate 0.02 --tgt-total-outstanding 79000000 ...
 ```
 
 ---
