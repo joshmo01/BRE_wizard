@@ -515,7 +515,84 @@ Step 7   generate_dashboard.py            →  loan_portfolio_dashboard.xlsx    
     --assumptions "C:/path/Repayment Assumptions.xlsx"
     --records N --product-weights "..." --emp-weights "..." --tier-weights "..."
     --tgt-npa-rate 0.02 --tgt-total-outstanding 79000000 ...
+
+Step 8   generate_kpi_suggestions.py     →  KPI_Gap_Suggestions.xlsx          (GAP ANALYSIS + SUGGESTIONS)
+
+  Run AFTER Step 7. Automatically reads Target vs Actual from the dashboard.
+  No interview needed — suggestions are auto-generated based on KPI gaps.
+
+  Pass pipeline file paths as CLI args:
+    --dashboard   "C:/path/loan_portfolio_dashboard.xlsx"
+    --pricing     "C:/path/Loan Pricing.xlsx"
+    --rules       "C:/path/Loan Eligibility Rules.xlsx"
+    --approved    "C:/path/approved_loans.xlsx"
+    --applications "C:/path/loan_applications.xlsx"
+    --output      "C:/path/to/folder"
 ```
+
+---
+
+## Script 8 — KPI Gap Analysis & Suggestions (`generate_kpi_suggestions.py`)
+
+Compares Target KPIs vs Actual from the dashboard and generates actionable suggestions across three levers:
+1. **Funnel / Application Intake** — expand customer segments, add products, widen eligibility
+2. **Loan Pricing Matrix** — adjust spreads, base rate, or band-level pricing
+3. **Rule Engine / Eligibility + Collection Policy** — tighten/relax BRE rules, strengthen collections
+
+Run this as the **final step** after `generate_dashboard.py` has produced the dashboard with Target KPIs.
+
+```bash
+python "C:/Users/joshm/.claude/skills/loan-portfolio-dashboard/scripts/generate_kpi_suggestions.py"
+# custom paths:
+python generate_kpi_suggestions.py --dashboard "C:/path/loan_portfolio_dashboard.xlsx" \
+                                    --pricing   "C:/path/Loan Pricing.xlsx" \
+                                    --rules     "C:/path/Loan Eligibility Rules.xlsx" \
+                                    --approved  "C:/path/approved_loans.xlsx" \
+                                    --applications "C:/path/loan_applications.xlsx" \
+                                    --output    "C:/path/to/folder"
+```
+
+Output file: `KPI_Gap_Suggestions.xlsx` (3 sheets)
+
+### Sheet 1 — Gap Summary
+All 10 KPIs with Actual vs Target, Gap %, and On Track / Off Target status.
+
+### Sheet 2 — Suggestions (grouped by lever)
+
+| Lever | Example Scenarios |
+|-------|-------------------|
+| **Funnel / Application Intake** | Disbursement below target → Expand to SENP segment, add Home/Auto products, widen age range, add digital lead channels |
+| **Loan Pricing Matrix** | Yield below target → Increase CIBIL spreads for lower bands, raise tenure/amount spreads, adjust employment-category pricing |
+| **Rule Engine / Eligibility** | NPA above target → Tighten CIBIL floor for high-NPA segments, cap loan amounts for risky ratings, exclude worst-performing segments |
+| **Collection Policy** | Delinquency above target → Automated early-stage reminders, risk-based collection intensity, field visits at DPD 30 for high-risk |
+
+Each suggestion includes: KPI affected, gap description, priority (High/Medium/Low), current value, suggested change, and an **Action column (amber)** for the user to fill in their decision.
+
+### Sheet 3 — Data Analysis
+Segment-level drill-down supporting the suggestions:
+- NPA by Segment (Retail, SME, Corporate, Agri)
+- NPA by Credit Rating (AAA → C)
+- NPA by Product (Personal, Home, Auto, Business)
+
+All tables are RAG-coded: red if NPA > 10%, yellow if NPA > 5%.
+
+### Suggestion Logic
+
+| KPI Gap | Lever | Suggestion Type |
+|---------|-------|-----------------|
+| Disbursement / Total Loans < Target | Funnel | Add SENP segment, expand products, add lead channels |
+| Disbursement / Total Loans < Target | Rules | Relax CIBIL floor (750→700), increase FOIR cap, widen age range |
+| Portfolio Yield < Target | Pricing | Increase CIBIL spreads for lower bands, add tenure/amount spreads |
+| Portfolio Yield < Target | Pricing | Increase employment spread for Private sector |
+| NPA Rate > Target | Rules | Tighten CIBIL for worst segment, exclude worst rating, cap loan amounts |
+| NPA / Delinquency > Target | Collection | Early-stage reminders, risk-based intensity, field visits |
+| NPA > Target | Pricing | Add segment-level NPA spread (+0.50% where NPA > 5%) |
+| Monthly Profit < Target | Pricing | Review NIM, reprice book |
+| Monthly Profit < Target | Funnel | Grow outstanding balance |
+| Avg Loan Size < Target | Rules | Raise max loan cap, add higher-ticket products |
+
+> **No mandatory pause needed** — this step is informational. Present the output path and tell
+> the user to review the Suggestions sheet and fill in the Action column.
 
 ---
 
